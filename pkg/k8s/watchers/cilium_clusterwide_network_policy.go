@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/tools/cache"
 
+	ipcacheTypes "github.com/cilium/cilium/pkg/ipcache/types"
 	"github.com/cilium/cilium/pkg/k8s"
 	cilium_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/k8s/informer"
@@ -39,7 +40,12 @@ func (k *K8sWatcher) ciliumClusterwideNetworkPoliciesInit(ciliumNPClient *k8s.K8
 					// See https://github.com/cilium/cilium/blob/27fee207f5422c95479422162e9ea0d2f2b6c770/pkg/policy/api/ingress.go#L112-L134
 					cnpCpy := cnp.DeepCopy()
 
-					err := k.addCiliumNetworkPolicyV2(ciliumNPClient, cnpCpy)
+					resource := ipcacheTypes.NewResourceID(
+						ipcacheTypes.ResourceKindCCNP,
+						cnp.ObjectMeta.Namespace,
+						cnp.ObjectMeta.Name,
+					)
+					err := k.addCiliumNetworkPolicyV2(ciliumNPClient, cnpCpy, resource)
 					k.K8sEventProcessed(resources.MetricCCNP, resources.MetricCreate, err == nil)
 				}
 			},
@@ -64,7 +70,13 @@ func (k *K8sWatcher) ciliumClusterwideNetworkPoliciesInit(ciliumNPClient *k8s.K8
 						oldCNPCpy := oldCNP.DeepCopy()
 						newCNPCpy := newCNP.DeepCopy()
 
-						err := k.updateCiliumNetworkPolicyV2(ciliumNPClient, oldCNPCpy, newCNPCpy)
+						resource := ipcacheTypes.NewResourceID(
+							ipcacheTypes.ResourceKindCCNP,
+							newCNP.ObjectMeta.Namespace,
+							newCNP.ObjectMeta.Name,
+						)
+
+						err := k.updateCiliumNetworkPolicyV2(ciliumNPClient, oldCNPCpy, newCNPCpy, resource)
 						k.K8sEventProcessed(resources.MetricCCNP, resources.MetricUpdate, err == nil)
 					}
 				}
@@ -77,7 +89,12 @@ func (k *K8sWatcher) ciliumClusterwideNetworkPoliciesInit(ciliumNPClient *k8s.K8
 					return
 				}
 				valid = true
-				err := k.deleteCiliumNetworkPolicyV2(cnp)
+				resource := ipcacheTypes.NewResourceID(
+					ipcacheTypes.ResourceKindCCNP,
+					cnp.ObjectMeta.Namespace,
+					cnp.ObjectMeta.Name,
+				)
+				err := k.deleteCiliumNetworkPolicyV2(cnp, resource)
 				k.K8sEventProcessed(resources.MetricCCNP, resources.MetricDelete, err == nil)
 			},
 		},
