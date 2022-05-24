@@ -70,7 +70,7 @@ type ipSecKey struct {
 }
 
 var (
-	ipSecKeysGlobalLock lock.RWMutex
+	ipSecLock lock.RWMutex
 
 	// ipSecKeysGlobal can be accessed by multiple subsystems concurrently,
 	// so it should be accessed only through the getIPSecKeys and
@@ -82,8 +82,8 @@ var (
 )
 
 func getIPSecKeys(ip net.IP) *ipSecKey {
-	ipSecKeysGlobalLock.RLock()
-	defer ipSecKeysGlobalLock.RUnlock()
+	ipSecLock.RLock()
+	defer ipSecLock.RUnlock()
 
 	key, scoped := ipSecKeysGlobal[ip.String()]
 	if scoped == false {
@@ -570,8 +570,8 @@ func loadIPSecKeys(r io.Reader) (int, uint8, error) {
 	var keyLen int
 	scopedLog := log
 
-	ipSecKeysGlobalLock.Lock()
-	defer ipSecKeysGlobalLock.Unlock()
+	ipSecLock.Lock()
+	defer ipSecLock.Unlock()
 
 	if err := encrypt.MapCreate(); err != nil {
 		return 0, 0, fmt.Errorf("Encrypt map create failed: %v", err)
@@ -758,8 +758,8 @@ func StartKeyfileWatcher(ctx context.Context, keyfilePath string, nodediscovery 
 }
 
 func doReclaimStaleKeys() {
-	ipSecKeysGlobalLock.Lock()
-	defer ipSecKeysGlobalLock.Unlock()
+	ipSecLock.Lock()
+	defer ipSecLock.Unlock()
 
 	xfrmStateList, err := netlink.XfrmStateList(0)
 	if err != nil {
