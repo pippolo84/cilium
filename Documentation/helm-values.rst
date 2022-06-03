@@ -369,6 +369,10 @@
      - Disable the usage of CiliumEndpoint CRD.
      - string
      - ``"false"``
+   * - dnsPolicy
+     - DNS policy for Cilium agent pods. Note that Cilium sets the DNS policy to ClusterFirstWithHostNet regardless of this setting in managed etcd mode (i.e. etcd.managed==true && etcd.k8sService==false) Ref: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-dns-policy
+     - string
+     - ``""``
    * - egressGateway
      - Enables egress gateway to redirect and SNAT the traffic that leaves the cluster.
      - object
@@ -1237,6 +1241,10 @@
      - Affinity for cilium-operator
      - object
      - ``{"podAntiAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchLabels":{"io.cilium/app":"operator"}},"topologyKey":"kubernetes.io/hostname"}]}}``
+   * - operator.dnsPolicy
+     - DNS policy for Cilium operator pods. Note that Cilium sets the DNS policy to ClusterFirstWithHostNet regardless of this setting in managed etcd mode (i.e. etcd.managed==true && etcd.k8sService==false) Ref: https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#pod-s-dns-policy
+     - string
+     - ``""``
    * - operator.enabled
      - Enable the cilium-operator component (required).
      - bool
