@@ -36,6 +36,7 @@ import (
 	"github.com/cilium/cilium/pkg/policy"
 	policyAPI "github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/safetime"
+	"github.com/cilium/cilium/pkg/source"
 	"github.com/cilium/cilium/pkg/trigger"
 )
 
@@ -373,7 +374,7 @@ func (d *Daemon) policyAdd(sourceRules policyAPI.Rules, opts *policy.AddOptions,
 	// processing in this function.
 	source := ""
 	if opts != nil {
-		source = opts.Source
+		source = string(opts.Source)
 	}
 	d.endpointManager.CallbackForEndpointsAtPolicyRev(d.ctx, newRev, func(now time.Time) {
 		duration, _ := safetime.TimeSinceSafe(policyAddStartTime, logger)
@@ -697,7 +698,9 @@ func (h *putPolicy) Handle(params PutPolicyParams) middleware.Responder {
 		}
 	}
 
-	rev, err := d.PolicyAdd(rules, &policy.AddOptions{Source: metrics.LabelEventSourceAPI})
+	rev, err := d.PolicyAdd(rules, &policy.AddOptions{
+		Source: source.LocalAPI,
+	})
 	if err != nil {
 		metrics.PolicyImportErrorsTotal.Inc()
 		return api.Error(PutPolicyFailureCode, err)

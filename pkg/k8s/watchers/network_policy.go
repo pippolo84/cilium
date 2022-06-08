@@ -18,6 +18,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/policy"
+	"github.com/cilium/cilium/pkg/source"
 )
 
 func (k *K8sWatcher) networkPoliciesInit(k8sClient kubernetes.Interface, swgKNPs *lock.StoppableWaitGroup) {
@@ -87,7 +88,10 @@ func (k *K8sWatcher) addK8sNetworkPolicyV1(k8sNP *slim_networkingv1.NetworkPolic
 	}
 	scopedLog = scopedLog.WithField(logfields.K8sNetworkPolicyName, k8sNP.ObjectMeta.Name)
 
-	opts := policy.AddOptions{Replace: true, Source: metrics.LabelEventSourceK8s}
+	opts := policy.AddOptions{
+		Replace: true,
+		Source:  source.Kubernetes,
+	}
 	if _, err := k.policyManager.PolicyAdd(rules, &opts); err != nil {
 		metrics.PolicyImportErrorsTotal.Inc()
 		scopedLog.WithError(err).WithFields(logrus.Fields{

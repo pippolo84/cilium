@@ -8,6 +8,7 @@ import (
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/source"
 )
 
 var (
@@ -46,5 +47,5 @@ type AddOptions struct {
 	Generated bool
 
 	// The source of this policy, one of api, fqdn or k8s
-	Source string
+	Source source.Source
 }

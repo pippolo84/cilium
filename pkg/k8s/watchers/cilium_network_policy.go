@@ -26,6 +26,7 @@ import (
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy"
+	"github.com/cilium/cilium/pkg/source"
 	"github.com/cilium/cilium/pkg/spanstat"
 )
 
@@ -175,7 +176,7 @@ func (k *K8sWatcher) addCiliumNetworkPolicyV2(ciliumNPClient clientset.Interface
 		if policyImportErr == nil {
 			rev, policyImportErr = k.policyManager.PolicyAdd(rules, &policy.AddOptions{
 				ReplaceWithLabels: cnp.GetIdentityLabels(),
-				Source:            metrics.LabelEventSourceK8s,
+				Source:            source.CustomResource,
 			})
 		}
 	}
