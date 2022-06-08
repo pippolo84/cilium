@@ -59,6 +59,8 @@ var (
 	testQAEndpointID   = uint16(1)
 	testProdEndpointID = uint16(2)
 
+	policyAddOptions = &policy.AddOptions{}
+
 	regenerationMetadata = &regeneration.ExternalRegenerationMetadata{
 		Reason:            "test",
 		RegenerationLevel: regeneration.RegenerateWithoutDatapath,
@@ -285,7 +287,7 @@ func (ds *DaemonSuite) TestUpdateConsumerMap(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err3 := ds.d.PolicyAdd(rules, nil)
+	_, err3 := ds.d.PolicyAdd(rules, policyAddOptions)
 	c.Assert(err3, Equals, nil)
 
 	// Prepare the identities necessary for testing
@@ -459,7 +461,7 @@ func (ds *DaemonSuite) TestL4_L7_Shadowing(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err = ds.d.PolicyAdd(rules, nil)
+	_, err = ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err, Equals, nil)
 
 	// Prepare endpoints
@@ -543,7 +545,7 @@ func (ds *DaemonSuite) TestL4_L7_ShadowingShortCircuit(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err = ds.d.PolicyAdd(rules, nil)
+	_, err = ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err, Equals, nil)
 
 	// Prepare endpoints
@@ -630,7 +632,7 @@ func (ds *DaemonSuite) TestL3_dependent_L7(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err = ds.d.PolicyAdd(rules, nil)
+	_, err = ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err, Equals, nil)
 
 	// Prepare endpoints
@@ -703,7 +705,7 @@ func (ds *DaemonSuite) TestReplacePolicy(c *C) {
 		},
 	}
 
-	_, err := ds.d.PolicyAdd(rules, nil)
+	_, err := ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err, IsNil)
 	ds.d.policy.Mutex.RLock()
 	c.Assert(len(ds.d.policy.SearchRLocked(lbls)), Equals, 2)
@@ -805,7 +807,7 @@ func (ds *DaemonSuite) TestRemovePolicy(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err3 := ds.d.PolicyAdd(rules, nil)
+	_, err3 := ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err3, Equals, nil)
 
 	cleanup, err2 := prepareEndpointDirs()
@@ -890,7 +892,7 @@ func (ds *DaemonSuite) TestIncrementalPolicy(c *C) {
 
 	ds.d.l7Proxy.RemoveAllNetworkPolicies()
 
-	_, err3 := ds.d.PolicyAdd(rules, nil)
+	_, err3 := ds.d.PolicyAdd(rules, policy.AddOptions{})
 	c.Assert(err3, Equals, nil)
 
 	cleanup, err2 := prepareEndpointDirs()
