@@ -141,6 +141,17 @@ func ParseContextOptions(options Options) (*ContextOptions, error) {
 func sourceNamespaceContext(flow *pb.Flow) (context string) {
 	if flow.GetSource() != nil {
 		context = flow.GetSource().Namespace
+		if context == "" {
+			for _, label := range flow.GetSource().GetLabels() {
+				if strings.HasPrefix(label, "k8s:io.kubernetes.pod.namespace=") {
+					keyval := strings.Split(label, "=")
+					if len(keyval) == 2 {
+						context = keyval[1]
+						break
+					}
+				}
+			}
+		}
 	}
 	return
 }
@@ -193,6 +204,17 @@ func sourceIPContext(flow *pb.Flow) (context string) {
 func destinationNamespaceContext(flow *pb.Flow) (context string) {
 	if flow.GetDestination() != nil {
 		context = flow.GetDestination().Namespace
+		if context == "" {
+			for _, label := range flow.GetDestination().GetLabels() {
+				if strings.HasPrefix(label, "k8s:io.kubernetes.pod.namespace=") {
+					keyval := strings.Split(label, "=")
+					if len(keyval) == 2 {
+						context = keyval[1]
+						break
+					}
+				}
+			}
+		}
 	}
 	return
 }

@@ -6,6 +6,7 @@
 package api
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -151,4 +152,21 @@ func TestShortenPodName(t *testing.T) {
 	assert.EqualValues(t, shortenPodName("pod-x-123-1123123"), "pod-x")
 	assert.EqualValues(t, shortenPodName("pod-0000"), "pod")
 	assert.EqualValues(t, shortenPodName("pod-pod-pod-1-1"), "pod-pod-pod")
+}
+
+func Test_sourceNamespaceContext(t *testing.T) {
+	flow := pb.Flow{
+		Source: &pb.Endpoint{
+			Labels: []string{
+				"k8s:app.kubernetes.io/name=tiefighter",
+				"k8s:class=tiefighter",
+				"k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name=default",
+				"k8s:io.cilium.k8s.policy.cluster=default",
+				"k8s:io.cilium.k8s.policy.serviceaccount=default",
+				"k8s:io.kubernetes.pod.namespace=default",
+				"k8s:org=empire",
+			},
+		},
+	}
+	fmt.Println(sourceNamespaceContext(&flow))
 }
