@@ -118,16 +118,22 @@ The example below shows how to configure the agent via :term:`ConfigMap` and to 
 
 .. code-block:: shell-session
 
-    $ cat agent-config/config
-    nonMasqueradeCIDRs:
-    - 10.0.0.0/8
-    - 172.16.0.0/12
-    - 192.168.0.0/16
-    masqLinkLocal: false
+    $ cat ip-masq-agent-cm.yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: ip-masq-agent
+    data:
+      config: |
+        nonMasqueradeCIDRs:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        masqLinkLocal: false
 
-    $ kubectl create configmap ip-masq-agent --from-file=agent-config --namespace=kube-system
+    $ kubectl create -n kube-system -f ip-masq-agent-cm.yaml
 
-    $ # Wait ~60s until the ConfigMap is mounted into a cilium pod
+    $ # Wait ~60s until the ConfigMap is propagated into the configuration file
 
     $ kubectl -n kube-system exec ds/cilium -- cilium bpf ipmasq list
     IP PREFIX/ADDRESS
