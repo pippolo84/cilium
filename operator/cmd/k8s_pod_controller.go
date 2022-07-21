@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Authors of Cilium
 
-package main
+package cmd
 
 import (
 	"context"
@@ -29,7 +29,7 @@ var (
 	lastPodRestart = map[string]time.Time{}
 )
 
-func enableUnmanagedKubeDNSController() {
+func EnableUnmanagedKubeDNSController() {
 	// These functions will block until the resources are synced with k8s.
 	watchers.CiliumEndpointsInit(k8s.CiliumClient().CiliumV2(), wait.NeverStop)
 	watchers.UnmanagedKubeDNSPodsInit(k8s.WatcherClient())

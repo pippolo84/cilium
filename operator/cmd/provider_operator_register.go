@@ -3,7 +3,7 @@
 
 //go:build ipam_provider_operator
 
-package main
+package cmd
 
 import (
 	// These dependencies should be included only when this file is included in the build.
@@ -12,6 +12,6 @@ import (
 )
 
 func init() {
-	allocatorProviders[ipamOption.IPAMClusterPool] = &clusterpool.AllocatorOperator{}
-	allocatorProviders[ipamOption.IPAMClusterPoolV2] = &clusterpool.AllocatorOperator{}
+	AllocatorProviders[ipamOption.IPAMClusterPool] = &clusterpool.AllocatorOperator{}
+	AllocatorProviders[ipamOption.IPAMClusterPoolV2] = &clusterpool.AllocatorOperator{}
 }

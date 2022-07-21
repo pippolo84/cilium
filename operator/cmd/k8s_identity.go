@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Authors of Cilium
 
-package main
+package cmd
 
 import (
 	"context"
 	"time"
 
 	"github.com/sirupsen/logrus"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 
@@ -22,6 +20,7 @@ import (
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/k8s/identitybackend"
 	"github.com/cilium/cilium/pkg/k8s/informer"
+	"github.com/cilium/cilium/pkg/k8s/utils"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
@@ -31,11 +30,11 @@ var identityStore cache.Store
 // will error if the object has since been changed.
 func deleteIdentity(ctx context.Context, identity *v2.CiliumIdentity) error {
 	// Wait until we can delete an identity
-	err := identityRateLimiter.Wait(ctx)
+	err := IdentityRateLimiter.Wait(ctx)
 	if err != nil {
 		return err
 	}
-	err = ciliumK8sClient.CiliumV2().CiliumIdentities().Delete(
+	err = CiliumK8sClient.CiliumV2().CiliumIdentities().Delete(
 		ctx,
 		identity.Name,
 		metav1.DeleteOptions{
@@ -54,7 +53,7 @@ func deleteIdentity(ctx context.Context, identity *v2.CiliumIdentity) error {
 }
 
 func updateIdentity(ctx context.Context, identity *v2.CiliumIdentity) error {
-	_, err := ciliumK8sClient.CiliumV2().CiliumIdentities().Update(
+	_, err := CiliumK8sClient.CiliumV2().CiliumIdentities().Update(
 		ctx,
 		identity,
 		metav1.UpdateOptions{})
@@ -161,7 +160,7 @@ func identityGCIteration(ctx context.Context) {
 	identityHeartbeat.GC()
 }
 
-func startCRDIdentityGC() {
+func StartCRDIdentityGC() {
 	if operatorOption.Config.EndpointGCInterval == 0 {
 		log.Fatal("The CiliumIdentity garbage collector requires the CiliumEndpoint garbage collector to be enabled")
 	}
@@ -178,13 +177,12 @@ func startCRDIdentityGC() {
 		})
 }
 
-func startManagingK8sIdentities() {
+func StartManagingK8sIdentities() {
 	identityHeartbeat = identity.NewIdentityHeartbeatStore(operatorOption.Config.IdentityHeartbeatTimeout)
 
 	identityStore = cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc)
 	identityInformer := informer.NewInformerWithStore(
-		cache.NewListWatchFromClient(ciliumK8sClient.CiliumV2().RESTClient(),
-			v2.CIDPluralName, v1.NamespaceAll, fields.Everything()),
+		utils.ListerWatcherFromTyped[*v2.CiliumIdentityList](CiliumK8sClient.CiliumV2().CiliumIdentities()),
 		&v2.CiliumIdentity{},
 		0,
 		cache.ResourceEventHandlerFuncs{

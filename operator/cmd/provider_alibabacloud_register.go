@@ -3,7 +3,7 @@
 
 //go:build ipam_provider_alibabacloud
 
-package main
+package cmd
 
 import (
 	"github.com/cilium/cilium/pkg/ipam/allocator/alibabacloud"
@@ -11,5 +11,5 @@ import (
 )
 
 func init() {
-	allocatorProviders[ipamOption.IPAMAlibabaCloud] = &alibabacloud.AllocatorAlibabaCloud{}
+	AllocatorProviders[ipamOption.IPAMAlibabaCloud] = &alibabacloud.AllocatorAlibabaCloud{}
 }

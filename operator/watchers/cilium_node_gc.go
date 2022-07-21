@@ -52,7 +52,7 @@ func (c *ciliumNodeGCCandidate) Delete(nodeName string) {
 }
 
 // RunCiliumNodeGC performs garbage collector for cilium node resource
-func RunCiliumNodeGC(ctx context.Context, ciliumNodeStore cache.Store, interval time.Duration) {
+func RunCiliumNodeGC(ctx context.Context, CiliumNodeStore cache.Store, interval time.Duration) {
 	nodesInit(k8s.WatcherClient(), ctx.Done())
 
 	// wait for k8s nodes synced is done
@@ -70,7 +70,7 @@ func RunCiliumNodeGC(ctx context.Context, ciliumNodeStore cache.Store, interval 
 		controller.ControllerParams{
 			Context: ctx,
 			DoFunc: func(ctx context.Context) error {
-				return performCiliumNodeGC(ctx, k8s.CiliumClient().CiliumV2().CiliumNodes(), ciliumNodeStore,
+				return performCiliumNodeGC(ctx, k8s.CiliumClient().CiliumV2().CiliumNodes(), CiliumNodeStore,
 					nodeGetter{}, interval, candidateStore)
 			},
 			RunInterval: interval,
@@ -78,9 +78,9 @@ func RunCiliumNodeGC(ctx context.Context, ciliumNodeStore cache.Store, interval 
 	)
 }
 
-func performCiliumNodeGC(ctx context.Context, client ciliumv2.CiliumNodeInterface, ciliumNodeStore cache.Store,
+func performCiliumNodeGC(ctx context.Context, client ciliumv2.CiliumNodeInterface, CiliumNodeStore cache.Store,
 	nodeGetter slimNodeGetter, interval time.Duration, candidateStore *ciliumNodeGCCandidate) error {
-	for _, nodeName := range ciliumNodeStore.ListKeys() {
+	for _, nodeName := range CiliumNodeStore.ListKeys() {
 		scopedLog := log.WithField(logfields.NodeName, nodeName)
 		_, err := nodeGetter.GetK8sSlimNode(nodeName)
 		if err == nil {
@@ -93,7 +93,7 @@ func performCiliumNodeGC(ctx context.Context, client ciliumv2.CiliumNodeInterfac
 			return err
 		}
 
-		obj, _, err := ciliumNodeStore.GetByKey(nodeName)
+		obj, _, err := CiliumNodeStore.GetByKey(nodeName)
 		if err != nil {
 			scopedLog.WithError(err).Error("Unable to fetch CiliumNode from store")
 			return err

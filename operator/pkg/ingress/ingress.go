@@ -91,6 +91,7 @@ func NewIngressController(options ...Option) (*IngressController, error) {
 		secretsNamespace:   opts.SecretsNamespace,
 	}
 	ic.ingressStore, ic.ingressInformer = informer.NewInformer(
+		// FIXME
 		cache.NewListWatchFromClient(k8s.WatcherClient().NetworkingV1().RESTClient(), "ingresses", corev1.NamespaceAll, fields.Everything()),
 		&slim_networkingv1.Ingress{},
 		0,

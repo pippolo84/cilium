@@ -3,7 +3,7 @@
 
 //go:build ipam_provider_aws
 
-package main
+package cmd
 
 import (
 	// These dependencies should be included only when this file is included in the build.
@@ -13,5 +13,5 @@ import (
 )
 
 func init() {
-	allocatorProviders[ipamOption.IPAMENI] = &allocatorAWS.AllocatorAWS{}
+	AllocatorProviders[ipamOption.IPAMENI] = &allocatorAWS.AllocatorAWS{}
 }

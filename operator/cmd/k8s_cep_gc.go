@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Authors of Cilium
 
-package main
+package cmd
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
-// enableCiliumEndpointSyncGC starts the node-singleton sweeper for
+// EnableCiliumEndpointSyncGC starts the node-singleton sweeper for
 // CiliumEndpoint objects where the managing node is no longer running. These
 // objects are created by the sync-to-k8s-ciliumendpoint controller on each
 // Endpoint.
@@ -31,7 +31,7 @@ import (
 //   - for each CEP
 //       delete CEP if the corresponding pod does not exist
 // CiliumEndpoint objects have the same name as the pod they represent
-func enableCiliumEndpointSyncGC(once bool) {
+func EnableCiliumEndpointSyncGC(once bool) {
 	var (
 		controllerName = "to-k8s-ciliumendpoint-gc"
 		scopedLog      = log.WithField("controller", controllerName)
@@ -39,7 +39,7 @@ func enableCiliumEndpointSyncGC(once bool) {
 		stopCh         = make(chan struct{})
 	)
 
-	ciliumClient := ciliumK8sClient.CiliumV2()
+	ciliumClient := CiliumK8sClient.CiliumV2()
 
 	if once {
 		log.Info("Running the garbage collector only once to clean up leftover CiliumEndpoint custom resources")
@@ -57,7 +57,7 @@ func enableCiliumEndpointSyncGC(once bool) {
 		// state.
 		watchers.PodsInit(k8s.WatcherClient(), stopCh)
 	}
-	<-k8sCiliumNodesCacheSynced
+	<-K8sCiliumNodesCacheSynced
 
 	// this dummy manager is needed only to add this controller to the global list
 	controller.NewManager().UpdateController(controllerName,
@@ -70,7 +70,7 @@ func enableCiliumEndpointSyncGC(once bool) {
 }
 
 func doCiliumEndpointSyncGC(ctx context.Context, once bool, stopCh chan struct{}, scopedLog *logrus.Entry) error {
-	ciliumClient := ciliumK8sClient.CiliumV2()
+	ciliumClient := CiliumK8sClient.CiliumV2()
 	// For each CEP we fetched, check if we know about it
 	for _, cepObj := range watchers.CiliumEndpointStore.List() {
 		cep, ok := cepObj.(*cilium_v2.CiliumEndpoint)
@@ -101,7 +101,7 @@ func doCiliumEndpointSyncGC(ctx context.Context, once bool, stopCh chan struct{}
 					}
 					podChecked = true
 				case "CiliumNode":
-					podObj, exists, err = ciliumNodeStore.GetByKey(owner.Name)
+					podObj, exists, err = CiliumNodeStore.GetByKey(owner.Name)
 					if err != nil {
 						scopedLog.WithError(err).Warn("Unable to get CiliumNode from store")
 					}

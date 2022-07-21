@@ -16,6 +16,7 @@ import (
 	"github.com/cilium/cilium/api/v1/operator/client"
 	"github.com/cilium/cilium/api/v1/operator/models"
 	"github.com/cilium/cilium/pkg/command"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
 var matchPattern string
@@ -25,6 +26,8 @@ var MetricsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all metrics for the operator",
 	Run: func(cmd *cobra.Command, args []string) {
+		log := log.WithField(logfields.LogSubsys, binaryName)
+
 		c := client.NewHTTPClientWithConfig(
 			strfmt.Default, client.DefaultTransportConfig().WithHost(operatorAddr))
 

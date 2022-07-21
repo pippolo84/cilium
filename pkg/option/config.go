@@ -1271,7 +1271,16 @@ func BindEnvWithLegacyEnvFallback(optName, legacyEnvName string) {
 func registerOpt(optName string) {
 	_, ok := RegisteredOptions[optName]
 	if ok || optName == "" {
-		panic(fmt.Errorf("option already registered: %s", optName))
+		// FIXME: the agent and the operator share the same option package with global
+		// variables. When we try to run both in the controlplane test framework, we will
+		// end up here after trying to set twice the shared config options.
+		// For now, we disable the panic and we just log the error.
+		// Long term solution should be to avoid using global variables for a shared package
+		// IOW: create an unshared object that contains the shared options and let each binary
+		// (agent or operator) use its private option object.
+
+		//panic(fmt.Errorf("option already registered: %s", optName))
+		log.WithError(fmt.Errorf("option already registered: %s", optName)).Warn("registerOpt")
 	}
 	RegisteredOptions[optName] = struct{}{}
 }

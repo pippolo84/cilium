@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Authors of Cilium
 
-package main
+package cmd
 
 import (
 	"time"
@@ -20,7 +20,7 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
-func startKvstoreIdentityGC() {
+func StartKvstoreIdentityGC() {
 	log.WithField(logfields.Interval, operatorOption.Config.IdentityGCInterval).Info("Starting kvstore identity garbage collector")
 	backend, err := kvstoreallocator.NewKVStoreBackend(cache.IdentitiesPath, "", nil, kvstore.Client())
 	if err != nil {
@@ -38,7 +38,7 @@ func startKvstoreIdentityGC() {
 		defer gcTimerDone()
 		for {
 			now := time.Now()
-			keysToDelete2, gcStats, err := a.RunGC(identityRateLimiter, keysToDelete)
+			keysToDelete2, gcStats, err := a.RunGC(IdentityRateLimiter, keysToDelete)
 			gcDuration := time.Since(now)
 			if err != nil {
 				log.WithError(err).Warning("Unable to run security identity garbage collector")
