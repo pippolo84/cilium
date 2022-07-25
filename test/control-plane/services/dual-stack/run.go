@@ -11,6 +11,8 @@ import (
 	"github.com/cilium/cilium/pkg/option"
 	controlplane "github.com/cilium/cilium/test/control-plane"
 	. "github.com/cilium/cilium/test/control-plane/services"
+
+	operatorOption "github.com/cilium/cilium/operator/option"
 )
 
 func RunDualStackTestWithVersion(t *testing.T, version string) {
@@ -45,9 +47,9 @@ func RunDualStackTestWithVersion(t *testing.T, version string) {
 		return nil
 	})
 
-	modConfig := func(c *option.DaemonConfig) {
-		c.EnableIPv6 = true
-		c.EnableNodePort = true
+	modConfig := func(daemonCfg *option.DaemonConfig, operatorCfg *operatorOption.OperatorConfig) {
+		daemonCfg.EnableIPv6 = true
+		daemonCfg.EnableNodePort = true
 	}
 	testCase.Run(t, version, modConfig)
 }

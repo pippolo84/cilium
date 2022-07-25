@@ -27,6 +27,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8sTesting "k8s.io/client-go/testing"
 
+	operatorOption "github.com/cilium/cilium/operator/option"
+
 	fakeDatapath "github.com/cilium/cilium/pkg/datapath/fake"
 	cilium_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	fakeCilium "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned/fake"
@@ -68,7 +70,12 @@ type ControlPlaneTestStep struct {
 	// Inputs is a slice of k8s objects that the control-plane should apply.
 	Inputs []k8sRuntime.Object
 
-	// Validate is called after the input objects are applied. Since the
+	// Bootstrap is called after the input objects are applied.
+	// It is meant to complete additional user-defined setup that cannot be
+	// carried out while applying Inputs objects at test step startup.
+	Bootstrap Bootstrapper
+
+	// Validator is called after the input objects are applied. Since the
 	// changes are applied asynchronously the validation is retried multiple
 	// times until it passes or timeout is reached.
 	Validator Validator
@@ -81,6 +88,49 @@ func NewStep(desc string) *ControlPlaneTestStep {
 func (t *ControlPlaneTestStep) AddObjects(objs ...k8sRuntime.Object) *ControlPlaneTestStep {
 	t.Inputs = append(t.Inputs, objs...)
 	return t
+}
+
+// AddBootstrap adds a bootstrapper to be called during test step bootstrapping.
+func (t *ControlPlaneTestStep) AddBootstrap(b Bootstrapper) *ControlPlaneTestStep {
+	if t.Validator != nil {
+		t.Bootstrap = multiBootstrapper{t.Bootstrap, b}
+	} else {
+		t.Bootstrap = b
+	}
+	return t
+}
+
+// AddBootstrapFunc adds a bootstrap function to be called during test step bootstrapping.
+func (t *ControlPlaneTestStep) AddBootstrapFunc(b func(*K8sObjsProxy) error) *ControlPlaneTestStep {
+	return t.AddBootstrap(funcBootstrapper{b})
+}
+
+// Bootstrapper is the interface satisfied by test step bootstrapping operations.
+type Bootstrapper interface {
+	// Setup is called at the start of each test case step to complete initial setup.
+	Setup(*K8sObjsProxy) error
+}
+
+type funcBootstrapper struct {
+	bootstrap func(*K8sObjsProxy) error
+}
+
+// Setup satisfies the Bootstrapper interface.
+func (fb funcBootstrapper) Setup(proxy *K8sObjsProxy) error {
+	return fb.bootstrap(proxy)
+}
+
+type multiBootstrapper struct {
+	head Bootstrapper
+	tail Bootstrapper
+}
+
+// Setup executes all the enqueued bootstrapping operations before the test validation phase.
+func (mb multiBootstrapper) Setup(proxy *K8sObjsProxy) error {
+	if err := mb.head.Setup(proxy); err != nil {
+		return err
+	}
+	return mb.tail.Setup(proxy)
 }
 
 func (t *ControlPlaneTestStep) AddValidation(newValidator Validator) *ControlPlaneTestStep {
@@ -125,13 +175,25 @@ func (mv multiValidator) Validate(datapath *fakeDatapath.FakeDatapath, proxy *K8
 // K8sObjsProxy exposes the API to access the current status
 // of the mocked k8s objects during the test steps.
 type K8sObjsProxy struct {
-	coreTracker   k8sTesting.ObjectTracker
-	slimTracker   k8sTesting.ObjectTracker
+	coreTracker k8sTesting.ObjectTracker
+	coreDecoder schemeDecoder
+
+	slimTracker k8sTesting.ObjectTracker
+	slimDecoder schemeDecoder
+
 	ciliumTracker k8sTesting.ObjectTracker
+	ciliumDecoder schemeDecoder
 }
 
 func newK8sObjectsProxy(coreTracker, slimTracker, ciliumTracker k8sTesting.ObjectTracker) *K8sObjsProxy {
-	return &K8sObjsProxy{coreTracker, slimTracker, ciliumTracker}
+	return &K8sObjsProxy{
+		coreTracker:   coreTracker,
+		coreDecoder:   newCoreSchemeDecoder(),
+		slimTracker:   slimTracker,
+		slimDecoder:   newSlimSchemeDecoder(),
+		ciliumTracker: ciliumTracker,
+		ciliumDecoder: newCiliumSchemeDecoder(),
+	}
 }
 
 // Get retrieves a k8s object given its group-version-resource, namespace and name.
@@ -142,17 +204,38 @@ func newK8sObjectsProxy(coreTracker, slimTracker, ciliumTracker k8sTesting.Objec
 // The first match will be returned.
 // If the object cannot be found, a non nil error is returned.
 func (op *K8sObjsProxy) Get(gvr schema.GroupVersionResource, ns, name string) (k8sRuntime.Object, error) {
-	if obj, err := op.coreTracker.Get(gvr, ns, name); err == nil {
+	var (
+		obj k8sRuntime.Object
+		err error
+	)
+
+	if obj, err = op.coreTracker.Get(gvr, ns, name); err == nil {
 		return obj, nil
 	}
-	if obj, err := op.slimTracker.Get(gvr, ns, name); err == nil {
+	if obj, err = op.slimTracker.Get(gvr, ns, name); err == nil {
 		return obj, nil
 	}
-	if obj, err := op.ciliumTracker.Get(gvr, ns, name); err == nil {
+	if obj, err = op.ciliumTracker.Get(gvr, ns, name); err == nil {
 		return obj, nil
 	}
 
-	return nil, errors.New("k8s object not found")
+	return nil, err
+}
+
+// Add adds an object to the specific tracker responsible to handle
+// its group,version,kind.
+func (op *K8sObjsProxy) Add(obj k8sRuntime.Object) error {
+	if op.coreDecoder.known(obj) {
+		return op.coreTracker.Add(obj)
+	}
+	if op.slimDecoder.known(obj) {
+		return op.slimTracker.Add(obj)
+	}
+	if op.ciliumDecoder.known(obj) {
+		return op.ciliumTracker.Add(obj)
+	}
+
+	return errors.New("k8s object scheme unknown")
 }
 
 // ControlPlaneTestCase is a collection of test steps for testing the service
@@ -171,7 +254,11 @@ func toVersionInfo(rawVersion string) *version.Info {
 
 // Run sets up the control-plane with a mock lbmap and executes the test case
 // against it.
-func (testCase *ControlPlaneTestCase) Run(t *testing.T, k8sVersion string, modConfig func(*option.DaemonConfig)) {
+func (testCase *ControlPlaneTestCase) Run(
+	t *testing.T,
+	k8sVersion string,
+	modConfig func(daemonCfg *option.DaemonConfig, operatorCfg *operatorOption.OperatorConfig),
+) {
 	flag.Parse()
 	if *flagDebug {
 		logging.SetLogLevelToDebug()
@@ -243,11 +330,15 @@ func (testCase *ControlPlaneTestCase) Run(t *testing.T, k8sVersion string, modCo
 	// the objects status to the test case steps.
 	objProxy := newK8sObjectsProxy(coreTracker, slimTracker, ciliumTracker)
 
-	datapath, agentHandle, err := startCiliumAgent(testCase.NodeName, clients, modConfig)
+	configureEnvironment(testCase.NodeName, clients, modConfig)
+
+	datapath, agentHandle, err := startCiliumAgent()
 	if err != nil {
 		t.Fatalf("Failed to start cilium agent: %s", err)
 	}
 	defer agentHandle.tearDown()
+
+	startCiliumOperator()
 
 	// Run through test steps and validate
 	for _, step := range testCase.Steps {
@@ -283,10 +374,19 @@ func (testCase *ControlPlaneTestCase) Run(t *testing.T, k8sVersion string, modCo
 				})
 			}
 
+			if step.Bootstrap != nil {
+				// Bootstrap the test case setup running user-defined functions.
+				// We expect that the k8s objects status will be modified during bootstrapping,
+				// so we must execute it exactly once.
+				if err := step.Bootstrap.Setup(objProxy); err != nil {
+					t.Fatalf("Test bootstrap failed: %s", err)
+				}
+			}
+
 			// Validate the datapath state. Since the processing of the k8s objects is asynchronous
 			// and there is no obvious way to synchronize with datapath (yet), so we'll
 			// try a few times and wait a bit.
-			err := retryUptoDuration(
+			err = retryUptoDuration(
 				func() error { return step.Validator.Validate(datapath, objProxy) },
 				testCase.ValidationTimeout)
 
@@ -297,7 +397,7 @@ func (testCase *ControlPlaneTestCase) Run(t *testing.T, k8sVersion string, modCo
 				err = step.Validator.Validate(datapath, objProxy)
 			}
 			if err != nil {
-				t.Fatalf("Test failed: %s", err)
+				t.Fatalf("Test validation failed: %s", err)
 			}
 		})
 	}

@@ -15,15 +15,9 @@ import (
 	"github.com/cilium/cilium/daemon/cmd"
 	fakeDatapath "github.com/cilium/cilium/pkg/datapath/fake"
 	"github.com/cilium/cilium/pkg/endpoint"
-	fqdnproxy "github.com/cilium/cilium/pkg/fqdn/proxy"
-	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
-	"github.com/cilium/cilium/pkg/k8s"
 	fakeCilium "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned/fake"
 	fakeSlim "github.com/cilium/cilium/pkg/k8s/slim/k8s/client/clientset/versioned/fake"
-	"github.com/cilium/cilium/pkg/k8s/version"
-	"github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
-	"github.com/cilium/cilium/pkg/proxy"
 )
 
 type agentHandle struct {
@@ -36,37 +30,7 @@ func (h *agentHandle) tearDown() {
 	os.RemoveAll(h.tempDir)
 }
 
-func startCiliumAgent(nodeName string, clients fakeClients, modConfig func(*option.DaemonConfig)) (*fakeDatapath.FakeDatapath, agentHandle, error) {
-	types.SetName(nodeName)
-
-	// Configure k8s and perform capability detection with the fake client.
-	k8s.Configure("dummy", "dummy", 10.0, 10)
-	version.Update(clients.core, &k8sConfig{})
-	k8s.SetClients(clients.core, clients.slim, clients.cilium, clients.apiext)
-
-	proxy.DefaultDNSProxy = fqdnproxy.MockFQDNProxy{}
-	option.Config.Populate()
-	option.Config.IdentityAllocationMode = option.IdentityAllocationModeCRD
-	option.Config.DryMode = true
-	option.Config.IPAM = ipamOption.IPAMKubernetes
-	option.Config.Opts = option.NewIntOptions(&option.DaemonMutableOptionLibrary)
-	option.Config.Opts.SetBool(option.DropNotify, true)
-	option.Config.Opts.SetBool(option.TraceNotify, true)
-	option.Config.Opts.SetBool(option.PolicyVerdictNotify, true)
-	option.Config.Opts.SetBool(option.Debug, true)
-	option.Config.EnableIPSec = false
-	option.Config.EnableIPv6 = false
-	option.Config.KubeProxyReplacement = option.KubeProxyReplacementStrict
-	option.Config.EnableHostIPRestore = false
-	option.Config.K8sRequireIPv6PodCIDR = false
-	option.Config.K8sEnableK8sEndpointSlice = true
-	option.Config.EnableL7Proxy = false
-	option.Config.EnableHealthCheckNodePort = false
-	option.Config.Debug = true
-
-	// Apply the test specific configuration
-	modConfig(option.Config)
-
+func startCiliumAgent() (*fakeDatapath.FakeDatapath, agentHandle, error) {
 	var handle agentHandle
 	handle.tempDir = setupTestDirectories()
 

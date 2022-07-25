@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
 
+	operatorOption "github.com/cilium/cilium/operator/option"
 	"github.com/cilium/cilium/pkg/cidr"
 	fakeDatapath "github.com/cilium/cilium/pkg/datapath/fake"
 	"github.com/cilium/cilium/pkg/option"
@@ -79,5 +80,5 @@ func validateNodes(dp *fakeDatapath.FakeDatapath, proxy *controlplane.K8sObjsPro
 }
 
 func TestNodeHander(t *testing.T) {
-	testCase.Run(t, "1.21", func(*option.DaemonConfig) {})
+	testCase.Run(t, "1.21", func(*option.DaemonConfig, *operatorOption.OperatorConfig) {})
 }

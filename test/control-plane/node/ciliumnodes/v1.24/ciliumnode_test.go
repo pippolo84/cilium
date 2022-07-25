@@ -6,6 +6,7 @@ package v1_24
 import (
 	"testing"
 
+	operatorOption "github.com/cilium/cilium/operator/option"
 	"github.com/cilium/cilium/pkg/option"
 	controlplane "github.com/cilium/cilium/test/control-plane"
 	node "github.com/cilium/cilium/test/control-plane/node/ciliumnodes"
@@ -13,5 +14,5 @@ import (
 
 func TestCiliumNodes1_24(t *testing.T) {
 	tc := controlplane.NewGoldenTest(t, "cilium-nodes-control-plane", node.NewGoldenCiliumNodesValidator)
-	tc.Run(t, "1.24", func(*option.DaemonConfig) {})
+	tc.Run(t, "1.24", func(*option.DaemonConfig, *operatorOption.OperatorConfig) {})
 }
