@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !privileged_tests
 // +build !privileged_tests
 
 package fqdn
@@ -33,6 +34,81 @@ import (
 type DNSCacheTestSuite struct{}
 
 var _ = Suite(&DNSCacheTestSuite{})
+
+func (ds *DNSCacheTestSuite) TestPotentialIssueOverlimitEntries(c *C) {
+	toFQDNsMinTTL := 100
+	toFQDNsMaxIPsPerHost := 5
+	cache := NewDNSCacheWithLimit(toFQDNsMinTTL, toFQDNsMaxIPsPerHost)
+
+	toFQDNsMaxDeferredConnectionDeletes := 10
+	zombies := NewDNSZombieMappings(toFQDNsMaxDeferredConnectionDeletes)
+
+	name := "test.com"
+	IPs := []net.IP{
+		net.ParseIP("1.1.1.1"),
+		net.ParseIP("1.1.1.2"),
+		net.ParseIP("1.1.1.3"),
+		net.ParseIP("1.1.1.4"),
+		net.ParseIP("1.1.1.5"),
+		net.ParseIP("1.1.1.6"),
+		net.ParseIP("1.1.1.7"),
+		net.ParseIP("1.1.1.8"),
+		net.ParseIP("1.1.1.9"),
+		net.ParseIP("1.1.1.10"),
+		net.ParseIP("1.1.1.11"),
+		net.ParseIP("1.1.1.12"),
+		net.ParseIP("1.1.1.13"),
+		net.ParseIP("1.1.1.14"),
+		net.ParseIP("1.1.1.15"),
+		net.ParseIP("1.1.1.16"),
+		net.ParseIP("1.1.1.17"),
+		net.ParseIP("1.1.1.18"),
+		net.ParseIP("1.1.1.19"),
+		net.ParseIP("1.1.1.20"),
+	}
+	ttl := 0 // will be overwritten with toFQDNsMinTTL
+
+	now := time.Now()
+	for i, ip := range IPs {
+		// entries with lower values in last IP octet will expire earlier
+		cache.Update(now.Add(-time.Duration(10-i)*time.Second), name, []net.IP{ip}, ttl)
+	}
+
+	affected := cache.GC(time.Now(), zombies)
+
+	// No more than toFQDNsMaxIPsPerHost will be left in the cache.
+	// The other ones will be moved to the zombies cache due to overlimit.
+	c.Assert(cache.forward[name], HasLen, toFQDNsMaxIPsPerHost)
+
+	c.Assert(affected, HasLen, 1)
+	c.Assert(affected[0], Equals, name)
+
+	alive, dead := zombies.GC()
+
+	// no more than toFQDNsMaxDeferredConnectionDeletes will be kept alive
+	c.Assert(alive, HasLen, toFQDNsMaxDeferredConnectionDeletes)
+
+	// entries more recent will be preferred
+	c.Assert(alive[0].IP.String(), Equals, "1.1.1.6")
+	c.Assert(alive[1].IP.String(), Equals, "1.1.1.7")
+	c.Assert(alive[2].IP.String(), Equals, "1.1.1.8")
+	c.Assert(alive[3].IP.String(), Equals, "1.1.1.9")
+	c.Assert(alive[4].IP.String(), Equals, "1.1.1.10")
+	c.Assert(alive[5].IP.String(), Equals, "1.1.1.11")
+	c.Assert(alive[6].IP.String(), Equals, "1.1.1.12")
+	c.Assert(alive[7].IP.String(), Equals, "1.1.1.13")
+	c.Assert(alive[8].IP.String(), Equals, "1.1.1.14")
+	c.Assert(alive[9].IP.String(), Equals, "1.1.1.15")
+
+	// remaining entries will be dead
+	c.Assert(dead, HasLen, len(IPs)-toFQDNsMaxIPsPerHost-toFQDNsMaxDeferredConnectionDeletes)
+
+	c.Assert(dead[0].IP.String(), Equals, "1.1.1.1")
+	c.Assert(dead[1].IP.String(), Equals, "1.1.1.2")
+	c.Assert(dead[2].IP.String(), Equals, "1.1.1.3")
+	c.Assert(dead[3].IP.String(), Equals, "1.1.1.4")
+	c.Assert(dead[4].IP.String(), Equals, "1.1.1.5")
+}
 
 // TestUpdateLookup tests that we can insert DNS data and retrieve it. We
 // iterate through time, ensuring that data is expired as appropriate. We also
