@@ -16,10 +16,9 @@ import (
 
 	operatorOption "github.com/cilium/cilium/operator/option"
 	"github.com/cilium/cilium/pkg/cidr"
-	fakeDatapath "github.com/cilium/cilium/pkg/datapath/fake"
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/option"
-	controlplane "github.com/cilium/cilium/test/control-plane"
+	"github.com/cilium/cilium/test/controlplane/suite"
 )
 
 var (
@@ -92,28 +91,12 @@ var (
 			"k8s:foo":                                 "bar",
 		},
 	}
-
-	steps = []*controlplane.ControlPlaneTestStep{
-		controlplane.
-			NewStep("validate identity gc").
-			AddBootstrapFunc(applyDummyIdentity).
-			AddValidationFunc(validateIdentityGC),
-	}
-
-	testCase = controlplane.ControlPlaneTestCase{
-		NodeName:          "identity-control-plane",
-		InitialObjects:    initialObjects,
-		Steps:             steps,
-		ValidationTimeout: 10 * time.Second,
-	}
 )
 
-func applyDummyIdentity(proxy *controlplane.K8sObjsProxy) error {
-	if err := proxy.Add(dummyIdentity); err != nil {
-		return err
-	}
+func applyDummyIdentity(test *suite.ControlPlaneTest) error {
+	test.UpdateObjects(dummyIdentity)
 
-	if _, err := proxy.Get(
+	if _, err := test.Get(
 		schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumidentities"},
 		"",
 		dummyIdentity.Name,
@@ -124,8 +107,8 @@ func applyDummyIdentity(proxy *controlplane.K8sObjsProxy) error {
 	return nil
 }
 
-func validateIdentityGC(dp *fakeDatapath.FakeDatapath, proxy *controlplane.K8sObjsProxy) error {
-	_, err := proxy.Get(
+func validateIdentityGC(test *suite.ControlPlaneTest) error {
+	_, err := test.Get(
 		schema.GroupVersionResource{Group: "cilium.io", Version: "v2", Resource: "ciliumidentities"},
 		"",
 		dummyIdentity.Name,
@@ -142,10 +125,27 @@ func validateIdentityGC(dp *fakeDatapath.FakeDatapath, proxy *controlplane.K8sOb
 	return nil
 }
 
-func TestNodeHander(t *testing.T) {
-	testCase.Run(t, "1.24", func(daemonCfg *option.DaemonConfig, operatorCfg *operatorOption.OperatorConfig) {
-		operatorCfg.EndpointGCInterval = 2 * time.Second
-		operatorCfg.IdentityGCInterval = 2 * time.Second
-		operatorCfg.IdentityHeartbeatTimeout = 2 * time.Second
+func init() {
+	suite.AddTestCase("IdentityGC", func(t *testing.T) {
+		for _, version := range []string{"1.20", "1.22", "1.24"} {
+			test := suite.NewControlPlaneTest(t, "identity-control-plane", version)
+
+			defer test.StopAgent()
+			defer test.StopOperator()
+
+			modConfig := func(_ *option.DaemonConfig, operatorCfg *operatorOption.OperatorConfig) {
+				operatorCfg.EndpointGCInterval = 2 * time.Second
+				operatorCfg.IdentityGCInterval = 2 * time.Second
+				operatorCfg.IdentityHeartbeatTimeout = 2 * time.Second
+			}
+
+			test.
+				UpdateObjects(initialObjects...).
+				SetupEnvironment(modConfig).
+				StartAgent().
+				StartOperator().
+				Execute(func() error { return applyDummyIdentity(test) }).
+				Eventually(func() error { return validateIdentityGC(test) })
+		}
 	})
 }
