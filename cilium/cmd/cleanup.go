@@ -40,6 +40,9 @@ working condition after uninstalling the Cilium agent.`,
 }
 
 var (
+	vp      *viper.Viper              = viper.New()
+	regOpts *option.RegisteredOptions = option.NewRegisteredOptions(vp)
+
 	cleanAll bool
 	cleanBPF bool
 	force    bool
@@ -76,19 +79,19 @@ func init() {
 	cleanupCmd.Flags().BoolVarP(&cleanBPF, bpfFlagName, "", false, "Remove BPF state")
 	cleanupCmd.Flags().BoolVarP(&force, forceFlagName, "f", false, "Skip confirmation")
 
-	option.BindEnv(allFlagName)
-	option.BindEnv(bpfFlagName)
+	regOpts.BindEnv(allFlagName)
+	regOpts.BindEnv(bpfFlagName)
 
 	bindEnv(cleanCiliumEnvVar, cleanCiliumEnvVar)
 	bindEnv(cleanBpfEnvVar, cleanBpfEnvVar)
 
-	if err := viper.BindPFlags(cleanupCmd.Flags()); err != nil {
+	if err := vp.BindPFlags(cleanupCmd.Flags()); err != nil {
 		Fatalf("viper failed to bind to flags: %v\n", err)
 	}
 }
 
 func bindEnv(flagName string, envName string) {
-	if err := viper.BindEnv(flagName, envName); err != nil {
+	if err := vp.BindEnv(flagName, envName); err != nil {
 		Fatalf("Unable to bind flag %s to env variable %s: %s", flagName, envName, err)
 	}
 }
@@ -272,8 +275,8 @@ func runCleanup() {
 		os.Exit(1)
 	}
 
-	cleanAll = viper.GetBool(allFlagName) || viper.GetBool(cleanCiliumEnvVar)
-	cleanBPF = viper.GetBool(bpfFlagName) || viper.GetBool(cleanBpfEnvVar)
+	cleanAll = vp.GetBool(allFlagName) || vp.GetBool(cleanCiliumEnvVar)
+	cleanBPF = vp.GetBool(bpfFlagName) || vp.GetBool(cleanBpfEnvVar)
 
 	// if no flags are specified then clean all
 	if (cleanAll || cleanBPF) == false {
