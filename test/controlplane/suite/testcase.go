@@ -25,6 +25,7 @@ import (
 	k8sTesting "k8s.io/client-go/testing"
 
 	operatorOption "github.com/cilium/cilium/operator/option"
+	"github.com/cilium/cilium/operator/watchers"
 	"github.com/cilium/cilium/pkg/k8s/version"
 	agentOption "github.com/cilium/cilium/pkg/option"
 
@@ -150,6 +151,11 @@ func (cpt *ControlPlaneTest) StartOperator() *ControlPlaneTest {
 	if cpt.operatorHandle != nil {
 		cpt.t.Fatal("StartOperator() already called")
 	}
+
+	operatorCmd.K8sCiliumNodesCacheSynced = make(chan struct{})
+	watchers.PodStoreSynced = make(chan struct{})
+	watchers.UnmanagedPodStoreSynced = make(chan struct{})
+
 	context, cancel := context.WithCancel(context.Background())
 	cpt.operatorHandle = &operatorHandle{
 		cancel: cancel,

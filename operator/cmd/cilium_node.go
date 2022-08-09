@@ -45,7 +45,7 @@ var (
 	// ciliumNodeStore contains all CiliumNodes present in k8s.
 	ciliumNodeStore cache.Store
 
-	k8sCiliumNodesCacheSynced = make(chan struct{})
+	K8sCiliumNodesCacheSynced = make(chan struct{})
 )
 
 func startSynchronizingCiliumNodes(ctx context.Context, nodeManager allocator.NodeEventHandler, withKVStore bool) error {
@@ -82,7 +82,7 @@ func startSynchronizingCiliumNodes(ctx context.Context, nodeManager allocator.No
 			}
 			close(connectedToKVStore)
 
-			<-k8sCiliumNodesCacheSynced
+			<-K8sCiliumNodesCacheSynced
 			// Since we processed all events received from k8s we know that
 			// at this point the list in ciliumNodeStore should be the source of
 			// truth and we need to delete all nodes in the kvNodeStore that are
@@ -205,7 +205,7 @@ func startSynchronizingCiliumNodes(ctx context.Context, nodeManager allocator.No
 
 	go func() {
 		cache.WaitForCacheSync(wait.NeverStop, ciliumNodeInformer.HasSynced)
-		close(k8sCiliumNodesCacheSynced)
+		close(K8sCiliumNodesCacheSynced)
 		log.Info("CiliumNodes caches synced with Kubernetes")
 		// Only handle events if nodeManagerSyncHandler is not nil. If it is nil
 		// then there isn't any event handler set for CiliumNodes events.

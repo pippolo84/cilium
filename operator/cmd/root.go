@@ -534,7 +534,7 @@ func OnOperatorStartLeading(ctx context.Context) {
 		// Once the CiliumNodes are synchronized with the operator we will
 		// be able to watch for K8s Node events which they will be used
 		// to create the remaining CiliumNodes.
-		<-k8sCiliumNodesCacheSynced
+		<-K8sCiliumNodesCacheSynced
 
 		// We don't want CiliumNodes that don't have podCIDRs to be
 		// allocated with a podCIDR already being used by another node.

@@ -57,7 +57,7 @@ func enableCiliumEndpointSyncGC(once bool) {
 		// state.
 		watchers.PodsInit(k8s.WatcherClient(), stopCh)
 	}
-	<-k8sCiliumNodesCacheSynced
+	<-K8sCiliumNodesCacheSynced
 
 	// this dummy manager is needed only to add this controller to the global list
 	controller.NewManager().UpdateController(controllerName,
