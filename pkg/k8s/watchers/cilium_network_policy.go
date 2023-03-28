@@ -14,6 +14,7 @@ import (
 	"github.com/cilium/cilium/pkg/controller"
 	"github.com/cilium/cilium/pkg/k8s"
 	cilium_v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
+	cilium_v2_alpha1 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2alpha1"
 	"github.com/cilium/cilium/pkg/k8s/client"
 	clientset "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
 	"github.com/cilium/cilium/pkg/k8s/resource"
@@ -82,48 +83,125 @@ func (r *ruleImportMetadataCache) get(cnp *types.SlimCNP) (policyImportMetadata,
 }
 
 func (k *K8sWatcher) ciliumNetworkPoliciesInit(ctx context.Context, cs client.Clientset) {
-	var hasSynced atomic.Bool
-	apiGroup := k8sAPIGroupCiliumNetworkPolicyV2
-	metricLabel := resources.MetricCNP
+	var cnpSynced, ccnpSynced, cidrGroupSynced atomic.Bool
 	go func() {
-		cache := make(map[resource.Key]*types.SlimCNP)
+		cnpEvents := k.sharedResources.CiliumNetworkPolicies.Events(ctx)
+		ccnpEvents := k.sharedResources.CiliumClusterwideNetworkPolicies.Events(ctx)
 
-		for event := range k.sharedResources.CiliumNetworkPolicies.Events(ctx) {
-			if event.Kind == resource.Sync {
-				hasSynced.Store(true)
-				event.Done(nil)
-				continue
-			}
+		// CNP cache contains both CNPs and CCNPs in their original form
+		// (i.e.: pre-translation of each CIDRGroupRef to a CIDRSet).
+		// This is done because, in case of a policy update, we need to know if each "FromCIDR"
+		// rule originated from the translation of a referenced CIDRGroup or by specifying that
+		// CIDRSet directly.
+		cnpCache := make(map[resource.Key]*types.SlimCNP)
 
-			slimCNP := &types.SlimCNP{
-				CiliumNetworkPolicy: &cilium_v2.CiliumNetworkPolicy{
-					TypeMeta:   event.Object.TypeMeta,
-					ObjectMeta: event.Object.ObjectMeta,
-					Spec:       event.Object.Spec,
-					Specs:      event.Object.Specs,
-				},
-			}
+		cidrGroupCache := make(map[string]*cilium_v2_alpha1.CiliumCIDRGroup)
+		cidrGroupEvents := k.sharedResources.CIDRGroups.Events(ctx)
 
-			var err error
-			switch event.Kind {
-			case resource.Upsert:
-				err = k.onUpsertCNP(slimCNP, cache, event.Key, cs, apiGroup, metricLabel)
-			case resource.Delete:
-				err = k.onDeleteCNP(slimCNP, cache, event.Key, apiGroup, metricLabel)
+		for {
+			select {
+			case event, ok := <-cnpEvents:
+				if !ok {
+					cnpEvents = nil
+					break
+				}
+
+				if event.Kind == resource.Sync {
+					cnpSynced.Store(true)
+					event.Done(nil)
+					continue
+				}
+
+				slimCNP := &types.SlimCNP{
+					CiliumNetworkPolicy: &cilium_v2.CiliumNetworkPolicy{
+						TypeMeta:   event.Object.TypeMeta,
+						ObjectMeta: event.Object.ObjectMeta,
+						Spec:       event.Object.Spec,
+						Specs:      event.Object.Specs,
+					},
+				}
+
+				var err error
+				switch event.Kind {
+				case resource.Upsert:
+					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP)
+				case resource.Delete:
+					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP)
+				}
+				reportCNPChangeMetrics(err)
+				event.Done(err)
+			case event, ok := <-ccnpEvents:
+				if !ok {
+					ccnpEvents = nil
+					break
+				}
+
+				if event.Kind == resource.Sync {
+					ccnpSynced.Store(true)
+					event.Done(nil)
+					continue
+				}
+
+				slimCNP := &types.SlimCNP{
+					CiliumNetworkPolicy: &cilium_v2.CiliumNetworkPolicy{
+						TypeMeta:   event.Object.TypeMeta,
+						ObjectMeta: event.Object.ObjectMeta,
+						Spec:       event.Object.Spec,
+						Specs:      event.Object.Specs,
+					},
+				}
+
+				var err error
+				switch event.Kind {
+				case resource.Upsert:
+					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP)
+				case resource.Delete:
+					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP)
+				}
+				event.Done(err)
+			case event, ok := <-cidrGroupEvents:
+				if !ok {
+					cidrGroupEvents = nil
+					break
+				}
+
+				if event.Kind == resource.Sync {
+					cidrGroupSynced.Store(true)
+					event.Done(nil)
+					continue
+				}
+
+				var err error
+				switch event.Kind {
+				case resource.Upsert:
+					err = k.onUpsertCIDRGroup(event.Object, cidrGroupCache, cnpCache, cs)
+				case resource.Delete:
+					err = k.onDeleteCIDRGroup(event.Object.Name, cidrGroupCache, cnpCache, cs)
+				}
+				event.Done(err)
 			}
-			reportCNPChangeMetrics(err)
-			event.Done(err)
+			if cnpEvents == nil && ccnpEvents == nil && cidrGroupEvents == nil {
+				return
+			}
 		}
 	}()
 
-	k.blockWaitGroupToSyncResources(ctx.Done(), nil, hasSynced.Load, apiGroup)
-	k.k8sAPIGroups.AddAPI(apiGroup)
+	k.registerResourceWithSyncFn(ctx, k8sAPIGroupCiliumNetworkPolicyV2, func() bool {
+		return cnpSynced.Load() && cidrGroupSynced.Load()
+	})
+	k.registerResourceWithSyncFn(ctx, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, func() bool {
+		return ccnpSynced.Load() && cidrGroupSynced.Load()
+	})
+	k.registerResourceWithSyncFn(ctx, k8sAPIGroupCiliumCIDRGroupV2Alpha1, func() bool {
+		return cidrGroupSynced.Load()
+	})
 }
 
-func (k *K8sWatcher) onUpsertCNP(
+func (k *K8sWatcher) onUpsert(
 	cnp *types.SlimCNP,
-	cache map[resource.Key]*types.SlimCNP,
+	cnpCache map[resource.Key]*types.SlimCNP,
 	key resource.Key,
+	cidrGroupCache map[string]*cilium_v2_alpha1.CiliumCIDRGroup,
 	cs client.Clientset,
 	apiGroup string,
 	metricLabel string,
@@ -140,7 +218,7 @@ func (k *K8sWatcher) onUpsertCNP(
 		k.K8sEventReceived(apiGroup, metricLabel, action, true, equal)
 	}()
 
-	oldCNP, ok := cache[key]
+	oldCNP, ok := cnpCache[key]
 	if !ok {
 		action = resources.MetricCreate
 	} else {
@@ -160,14 +238,16 @@ func (k *K8sWatcher) onUpsertCNP(
 	// See https://github.com/cilium/cilium/blob/27fee207f5422c95479422162e9ea0d2f2b6c770/pkg/policy/api/ingress.go#L112-L134
 	cnpCpy := cnp.DeepCopy()
 
+	translatedCNP := resolveCIDRGroupRef(cnpCpy, cidrGroupCache)
+
 	var err error
 	if ok {
-		err = k.updateCiliumNetworkPolicyV2(cs, oldCNP, cnpCpy, initialRecvTime)
+		err = k.updateCiliumNetworkPolicyV2(cs, oldCNP, translatedCNP, initialRecvTime)
 	} else {
-		err = k.addCiliumNetworkPolicyV2(cs, cnpCpy, initialRecvTime)
+		err = k.addCiliumNetworkPolicyV2(cs, translatedCNP, initialRecvTime)
 	}
 	if err == nil {
-		cache[key] = cnpCpy
+		cnpCache[key] = cnpCpy
 	}
 
 	k.K8sEventProcessed(metricLabel, action, err == nil)
@@ -175,7 +255,7 @@ func (k *K8sWatcher) onUpsertCNP(
 	return err
 }
 
-func (k *K8sWatcher) onDeleteCNP(
+func (k *K8sWatcher) onDelete(
 	cnp *types.SlimCNP,
 	cache map[resource.Key]*types.SlimCNP,
 	key resource.Key,
@@ -377,6 +457,11 @@ func (k *K8sWatcher) updateCiliumNetworkPolicyV2AnnotationsOnly(ciliumNPClient c
 			},
 		})
 
+}
+
+func (k *K8sWatcher) registerResourceWithSyncFn(ctx context.Context, resource string, syncFn func() bool) {
+	k.blockWaitGroupToSyncResources(ctx.Done(), nil, syncFn, resource)
+	k.k8sAPIGroups.AddAPI(resource)
 }
 
 // reportCNPChangeMetrics generates metrics for changes (Add, Update, Delete) to

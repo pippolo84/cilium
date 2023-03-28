@@ -677,4 +677,10 @@ const (
 
 	// User identifies a given user
 	User = "user"
+
+	// CIDRGroupRef is a references to a CiliumCIDRGroup object.
+	CIDRGroupRef = "cidrGroupRefs"
+
+	// CIDRGroupRefs are the references to the CiliumCIDRGroup objects.
+	CIDRGroupRefs = "cidrGroupRefs"
 )
