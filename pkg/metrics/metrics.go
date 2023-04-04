@@ -305,6 +305,9 @@ var (
 	// after the referenced CIDRGroups have been updated or deleted.
 	CIDRGroupTranslationTimeStats = NoOpObserver
 
+	// CIDRGroupPolicies is the number of CNPs and CCNPs referencing at least one CiliumCIDRGroup.
+	CIDRGroupPolicies = NoOpGauge
+
 	// Identity
 
 	// Identity is the number of identities currently in use on the node by type
@@ -562,6 +565,7 @@ type Configuration struct {
 	PolicyEndpointStatusEnabled             bool
 	PolicyImplementationDelayEnabled        bool
 	CIDRGroupTranslationTimeStatsEnabled    bool
+	CIDRGroupPoliciesCountEnabled           bool
 	IdentityCountEnabled                    bool
 	EventTSEnabled                          bool
 	EventLagK8sEnabled                      bool
@@ -640,6 +644,7 @@ func DefaultMetrics() map[string]struct{} {
 		Namespace + "_policy_endpoint_enforcement_status":                            {},
 		Namespace + "_policy_implementation_delay":                                   {},
 		Namespace + "_cidr_group_translation_time_stats_seconds":                     {},
+		Namespace + "_cidr_group_policies":                                           {},
 		Namespace + "_identity":                                                      {},
 		Namespace + "_event_ts":                                                      {},
 		Namespace + "_proxy_redirects":                                               {},
@@ -850,6 +855,16 @@ func CreateConfiguration(metricsEnabled []string) (Configuration, []prometheus.C
 
 			collectors = append(collectors, CIDRGroupTranslationTimeStats)
 			c.CIDRGroupTranslationTimeStatsEnabled = true
+
+		case Namespace + "_cidr_group_policies":
+			CIDRGroupPolicies = prometheus.NewGauge(prometheus.GaugeOpts{
+				Namespace: Namespace,
+				Name:      "cidr_group_policies",
+				Help:      "Number of CNPs and CCNPs referencing at least one CiliumCIDRGroup",
+			})
+
+			collectors = append(collectors, CIDRGroupPolicies)
+			c.CIDRGroupPoliciesCountEnabled = true
 
 		case Namespace + "_identity":
 			Identity = prometheus.NewGaugeVec(prometheus.GaugeOpts{

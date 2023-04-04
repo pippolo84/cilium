@@ -98,6 +98,9 @@ func (k *K8sWatcher) ciliumNetworkPoliciesInit(ctx context.Context, cs client.Cl
 		cidrGroupCache := make(map[string]*cilium_v2_alpha1.CiliumCIDRGroup)
 		cidrGroupEvents := k.sharedResources.CIDRGroups.Events(ctx)
 
+		// cidrGroupPolicies is the set of policies that are referencing CiliumCIDRGroup objects.
+		cidrGroupPolicies := make(map[resource.Key]struct{})
+
 		for {
 			select {
 			case event, ok := <-cnpEvents:
@@ -124,9 +127,9 @@ func (k *K8sWatcher) ciliumNetworkPoliciesInit(ctx context.Context, cs client.Cl
 				var err error
 				switch event.Kind {
 				case resource.Upsert:
-					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP)
+					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP, cidrGroupPolicies)
 				case resource.Delete:
-					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP)
+					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumNetworkPolicyV2, resources.MetricCNP, cidrGroupPolicies)
 				}
 				reportCNPChangeMetrics(err)
 				event.Done(err)
@@ -154,9 +157,9 @@ func (k *K8sWatcher) ciliumNetworkPoliciesInit(ctx context.Context, cs client.Cl
 				var err error
 				switch event.Kind {
 				case resource.Upsert:
-					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP)
+					err = k.onUpsert(slimCNP, cnpCache, event.Key, cidrGroupCache, cs, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP, cidrGroupPolicies)
 				case resource.Delete:
-					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP)
+					err = k.onDelete(slimCNP, cnpCache, event.Key, k8sAPIGroupCiliumClusterwideNetworkPolicyV2, resources.MetricCCNP, cidrGroupPolicies)
 				}
 				reportCNPChangeMetrics(err)
 				event.Done(err)
@@ -206,6 +209,7 @@ func (k *K8sWatcher) onUpsert(
 	cs client.Clientset,
 	apiGroup string,
 	metricLabel string,
+	cidrGroupPolicies map[resource.Key]struct{},
 ) error {
 	initialRecvTime := time.Now()
 
@@ -233,6 +237,15 @@ func (k *K8sWatcher) onUpsert(
 	if cnp.RequiresDerivative() {
 		return nil
 	}
+
+	// check if this cnp was referencing or is now referencing a
+	// CiliumCIDRGroup and update the relevant metric accordingly.
+	if len(getCIDRGroupRefs(cnp)) > 0 {
+		cidrGroupPolicies[key] = struct{}{}
+	} else {
+		delete(cidrGroupPolicies, key)
+	}
+	metrics.CIDRGroupPolicies.Set(float64(len(cidrGroupPolicies)))
 
 	// We need to deepcopy this structure because we are writing
 	// fields.
@@ -264,9 +277,13 @@ func (k *K8sWatcher) onDelete(
 	key resource.Key,
 	apiGroup string,
 	metricLabel string,
+	cidrGroupPolicies map[resource.Key]struct{},
 ) error {
 	err := k.deleteCiliumNetworkPolicyV2(cnp)
 	delete(cache, key)
+
+	delete(cidrGroupPolicies, key)
+	metrics.CIDRGroupPolicies.Set(float64(len(cidrGroupPolicies)))
 
 	k.K8sEventProcessed(metricLabel, resources.MetricDelete, err == nil)
 	k.K8sEventReceived(apiGroup, metricLabel, resources.MetricDelete, true, true)
