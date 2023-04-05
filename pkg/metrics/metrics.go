@@ -216,6 +216,12 @@ const (
 	LabelAddressType          = "address_type"
 	LabelAddressTypePrimary   = "primary"
 	LabelAddressTypeSecondary = "secondary"
+
+	// LabelPolicyNamespace is the label for the namespace of the policy that references a CIDRGroup
+	LabelPolicyNamespace = "policyNamespace"
+
+	// LabelPolicyName is the label for the name of the policy that references a CIDRGroup
+	LabelPolicyName = "policyName"
 )
 
 var (
@@ -292,6 +298,12 @@ var (
 	// through the datapath. The longest times will roughly correlate with the
 	// time taken to fully deploy an endpoint.
 	PolicyImplementationDelay = NoOpObserverVec
+
+	// CIDRGroup
+
+	// CIDRGroupTranslationTimeStats is the time taken to translate the policy field `FromCIDRGroupRef`
+	// after the referenced CIDRGroups have been updated or deleted.
+	CIDRGroupTranslationTimeStats = NoOpObserver
 
 	// Identity
 
@@ -549,6 +561,7 @@ type Configuration struct {
 	PolicyChangeTotalEnabled                bool
 	PolicyEndpointStatusEnabled             bool
 	PolicyImplementationDelayEnabled        bool
+	CIDRGroupTranslationTimeStatsEnabled    bool
 	IdentityCountEnabled                    bool
 	EventTSEnabled                          bool
 	EventLagK8sEnabled                      bool
@@ -626,6 +639,7 @@ func DefaultMetrics() map[string]struct{} {
 		Namespace + "_policy_change_total":                                           {},
 		Namespace + "_policy_endpoint_enforcement_status":                            {},
 		Namespace + "_policy_implementation_delay":                                   {},
+		Namespace + "_cidr_group_translation_time_stats_seconds":                     {},
 		Namespace + "_identity":                                                      {},
 		Namespace + "_event_ts":                                                      {},
 		Namespace + "_proxy_redirects":                                               {},
@@ -826,6 +840,16 @@ func CreateConfiguration(metricsEnabled []string) (Configuration, []prometheus.C
 
 			collectors = append(collectors, PolicyImplementationDelay)
 			c.PolicyImplementationDelayEnabled = true
+
+		case Namespace + "_cidr_group_translation_time_stats_seconds":
+			CIDRGroupTranslationTimeStats = prometheus.NewHistogram(prometheus.HistogramOpts{
+				Namespace: Namespace,
+				Name:      "cidr_group_translation_time_stats_seconds",
+				Help:      "CIDRGroup translation time stats",
+			})
+
+			collectors = append(collectors, CIDRGroupTranslationTimeStats)
+			c.CIDRGroupTranslationTimeStatsEnabled = true
 
 		case Namespace + "_identity":
 			Identity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
