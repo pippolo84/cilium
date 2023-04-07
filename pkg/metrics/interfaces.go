@@ -37,7 +37,7 @@ var (
 
 	NoOpCounter     prometheus.Counter     = &counter{NoOpMetric, NoOpCollector}
 	NoOpCounterVec  CounterVec             = &counterVec{NoOpCollector}
-	NoOpObserver    prometheus.Observer    = &observer{}
+	NoOpObserver    prometheus.Histogram   = &observer{NoOpCollector}
 	NoOpObserverVec prometheus.ObserverVec = &observerVec{NoOpCollector}
 	NoOpGauge       prometheus.Gauge       = &gauge{NoOpMetric, NoOpCollector}
 	NoOpGaugeVec    GaugeVec               = &gaugeVec{NoOpCollector}
@@ -83,9 +83,14 @@ func (cv *counterVec) With(labels prometheus.Labels) prometheus.Counter { return
 
 // Observer
 
-type observer struct{}
+type observer struct {
+	prometheus.Collector
+}
 
 func (o *observer) Observe(float64) {}
+
+func (o *observer) Desc() *prometheus.Desc  { return nil }
+func (o *observer) Write(*dto.Metric) error { return nil }
 
 // ObserverVec
 
