@@ -38,7 +38,7 @@ func (c CIDR) MatchesAll() bool {
 type CIDRRule struct {
 	// CIDR is a CIDR prefix / IP Block.
 	//
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:OneOf
 	Cidr CIDR `json:"cidr"`
 
 	// ExceptCIDRs is a list of IP blocks which the endpoint subject to the rule
@@ -49,6 +49,13 @@ type CIDRRule struct {
 	//
 	// +kubebuilder:validation:Optional
 	ExceptCIDRs []CIDR `json:"except,omitempty"`
+
+	// CIDRGroupRef is a reference to a CiliumCIDRGroup object.
+	// A CiliumCIDRGroup contains a list of CIDRs that the endpoint, subject to
+	// the rule, can (Ingress) or cannot (IngressDeny) receive connections from.
+	//
+	// +kubebuilder:validation:OneOf
+	CIDRGroupRef CIDRGroupRef `json:"cidrGroupRef,omitempty"`
 
 	// Generated indicates whether the rule was generated based on other rules
 	// or provided by user
@@ -172,8 +179,7 @@ func addrsToCIDRRules(addrs []netip.Addr) []CIDRRule {
 	return cidrRules
 }
 
-// CIDRGroupRefSlice is a slice of references to CIDR Group.
-type CIDRGroupRefSlice []CIDRGroupRef
+// +kubebuilder:validation:Pattern=`^([-a-zA-Z0-9_]+[.]?)+$`
 
 // CIDRGroupRef is a reference to a CIDR Group.
 // A CIDR Group is a list of CIDRs whose IP addresses should be considered as a

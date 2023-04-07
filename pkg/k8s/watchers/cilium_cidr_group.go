@@ -129,6 +129,7 @@ func resolveCIDRGroupRef(cnp *types.SlimCNP, cidrGroupCache map[string]*cilium_v
 			logfields.CIDRGroupRefs:           refs,
 		}).WithError(err).Warning("unable to translate all cidr groups to cidrs")
 	}
+
 	translated := translateCIDRGroupRefs(cnp, cidrsSets)
 
 	return translated
@@ -151,8 +152,8 @@ func specHasCIDRGroupRef(spec *api.Rule, cidrGroup string) bool {
 		return false
 	}
 	for _, ingress := range spec.Ingress {
-		for _, cidrGroupRef := range ingress.FromCIDRGroupRef {
-			if string(cidrGroupRef) == cidrGroup {
+		for _, rule := range ingress.FromCIDRSet {
+			if string(rule.CIDRGroupRef) == cidrGroup {
 				return true
 			}
 		}
@@ -165,41 +166,20 @@ func getCIDRGroupRefs(cnp *types.SlimCNP) []string {
 
 	if cnp.Spec != nil {
 		for _, ingress := range cnp.Spec.Ingress {
-			for _, cidrGroupRef := range ingress.FromCIDRGroupRef {
-				cidrGroupRefs = append(cidrGroupRefs, string(cidrGroupRef))
+			for _, rule := range ingress.FromCIDRSet {
+				cidrGroupRefs = append(cidrGroupRefs, string(rule.CIDRGroupRef))
 			}
 		}
 	}
 	for _, spec := range cnp.Specs {
 		for _, ingress := range spec.Ingress {
-			for _, cidrGroupRef := range ingress.FromCIDRGroupRef {
-				cidrGroupRefs = append(cidrGroupRefs, string(cidrGroupRef))
+			for _, rule := range ingress.FromCIDRSet {
+				cidrGroupRefs = append(cidrGroupRefs, string(rule.CIDRGroupRef))
 			}
 		}
 	}
 
 	return cidrGroupRefs
-}
-
-func translateCIDRGroupRefs(cnp *types.SlimCNP, cidrsSets map[string][]api.CIDR) *types.SlimCNP {
-	cnpCpy := cnp.DeepCopy()
-
-	if cnpCpy.Spec != nil {
-		for i := range cnpCpy.Spec.Ingress {
-			for _, cidrGroupRef := range cnpCpy.Spec.Ingress[i].FromCIDRGroupRef {
-				cnpCpy.Spec.Ingress[i].FromCIDR = append(cnpCpy.Spec.Ingress[i].FromCIDR, cidrsSets[string(cidrGroupRef)]...)
-			}
-		}
-	}
-	for i := range cnpCpy.Specs {
-		for j := range cnpCpy.Specs[i].Ingress {
-			for _, cidrGroupRef := range cnpCpy.Specs[i].Ingress[j].FromCIDRGroupRef {
-				cnpCpy.Specs[i].Ingress[j].FromCIDR = append(cnpCpy.Specs[i].Ingress[j].FromCIDR, cidrsSets[string(cidrGroupRef)]...)
-			}
-		}
-	}
-
-	return cnpCpy
 }
 
 func cidrGroupRefsToCIDRsSets(cidrGroupRefs []string, cache map[string]*cilium_v2_alpha1.CiliumCIDRGroup) (map[string][]api.CIDR, error) {
@@ -223,4 +203,51 @@ func cidrGroupRefsToCIDRsSets(cidrGroupRefs []string, cache map[string]*cilium_v
 		}
 	}
 	return cidrsSet, errors.Join(errs...)
+}
+
+func translateCIDRGroupRefs(cnp *types.SlimCNP, cidrsSets map[string][]api.CIDR) *types.SlimCNP {
+	cnpCpy := cnp.DeepCopy()
+
+	if cnpCpy.Spec != nil {
+		translateSpec(cnpCpy.Spec, cidrsSets)
+	}
+	for i := range cnpCpy.Specs {
+		if cnpCpy.Specs[i] != nil {
+			translateSpec(cnpCpy.Specs[i], cidrsSets)
+		}
+	}
+	return cnpCpy
+}
+
+func translateSpec(spec *api.Rule, cidrsSets map[string][]api.CIDR) {
+	for i := range spec.Ingress {
+		var (
+			oldRules api.CIDRRuleSlice
+			refs     []api.CIDRGroupRef
+		)
+
+		for _, rule := range spec.Ingress[i].FromCIDRSet {
+			if rule.CIDRGroupRef == "" {
+				// keep rules without a cidr group reference
+				oldRules = append(oldRules, rule)
+				continue
+			}
+			// collect all references to a cidr group
+			refs = append(refs, rule.CIDRGroupRef)
+		}
+
+		// add rules for each cidr in the referenced cidr groups
+		var newRules api.CIDRRuleSlice
+		for _, ref := range refs {
+			cidrs, found := cidrsSets[string(ref)]
+			if !found || len(cidrs) == 0 {
+				continue
+			}
+			for _, cidr := range cidrs {
+				newRules = append(newRules, api.CIDRRule{Cidr: cidr})
+			}
+		}
+
+		spec.Ingress[i].FromCIDRSet = append(oldRules, newRules...)
+	}
 }

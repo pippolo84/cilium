@@ -65,13 +65,6 @@ type IngressCommonRule struct {
 	// +kubebuilder:validation:Optional
 	FromCIDRSet CIDRRuleSlice `json:"fromCIDRSet,omitempty"`
 
-	// FromCIDRGroupRef is a list of CIDRs that the endpoint, subject to the rule,
-	// can or cannot receive connections from (in addition to FromEndpoints).
-	// This will match on the source IP address of incoming connections
-	//
-	// +kubebuilder:validation:Optional
-	FromCIDRGroupRef CIDRGroupRefSlice `json:"fromCIDRGroupRefs,omitempty"`
-
 	// FromEntities is a list of special entities which the endpoint subject
 	// to the rule is allowed to receive connections from. Supported entities are
 	// `world`, `cluster` and `host`
