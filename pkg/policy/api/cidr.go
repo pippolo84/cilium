@@ -171,3 +171,11 @@ func addrsToCIDRRules(addrs []netip.Addr) []CIDRRule {
 	}
 	return cidrRules
 }
+
+// CIDRGroupRefSlice is a slice of references to CIDR Group.
+type CIDRGroupRefSlice []CIDRGroupRef
+
+// CIDRGroupRef is a reference to a CIDR Group.
+// A CIDR Group is a list of CIDRs whose IP addresses should be considered as a
+// same entity when applying fromCIDRGroupRefs policies on incoming network traffic.
+type CIDRGroupRef string

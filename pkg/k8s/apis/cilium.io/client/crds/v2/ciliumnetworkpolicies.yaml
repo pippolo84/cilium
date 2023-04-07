@@ -1467,6 +1467,18 @@ spec:
                         pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/([0-9]|[1-2][0-9]|3[0-2])$|^s*((([0-9A-Fa-f]{1,4}:){7}(:|([0-9A-Fa-f]{1,4})))|(([0-9A-Fa-f]{1,4}:){6}:([0-9A-Fa-f]{1,4})?)|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){0,1}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){0,2}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){0,3}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){0,4}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){0,5}):([0-9A-Fa-f]{1,4})?))|(:(:|((:[0-9A-Fa-f]{1,4}){1,7}))))(%.+)?s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$
                         type: string
                       type: array
+                    fromCIDRGroupRefs:
+                      description: FromCIDRGroupRef is a list of CIDRs that the endpoint,
+                        subject to the rule, can or cannot receive connections from
+                        (in addition to FromEndpoints). This will match on the source
+                        IP address of incoming connections
+                      items:
+                        description: CIDRGroupRef is a reference to a CIDR Group.
+                          A CIDR Group is a list of CIDRs whose IP addresses should
+                          be considered as a same entity when applying fromCIDRGroupRefs
+                          policies on incoming network traffic.
+                        type: string
+                      type: array
                     fromCIDRSet:
                       description: "FromCIDRSet is a list of IP blocks which the endpoint
                         subject to the rule is allowed to receive connections from
@@ -2164,6 +2176,18 @@ spec:
                         description: 'CIDR specifies a block of IP addresses. Example:
                           192.0.2.1/32'
                         pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/([0-9]|[1-2][0-9]|3[0-2])$|^s*((([0-9A-Fa-f]{1,4}:){7}(:|([0-9A-Fa-f]{1,4})))|(([0-9A-Fa-f]{1,4}:){6}:([0-9A-Fa-f]{1,4})?)|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){0,1}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){0,2}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){0,3}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){0,4}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){0,5}):([0-9A-Fa-f]{1,4})?))|(:(:|((:[0-9A-Fa-f]{1,4}){1,7}))))(%.+)?s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$
+                        type: string
+                      type: array
+                    fromCIDRGroupRefs:
+                      description: FromCIDRGroupRef is a list of CIDRs that the endpoint,
+                        subject to the rule, can or cannot receive connections from
+                        (in addition to FromEndpoints). This will match on the source
+                        IP address of incoming connections
+                      items:
+                        description: CIDRGroupRef is a reference to a CIDR Group.
+                          A CIDR Group is a list of CIDRs whose IP addresses should
+                          be considered as a same entity when applying fromCIDRGroupRefs
+                          policies on incoming network traffic.
                         type: string
                       type: array
                     fromCIDRSet:
@@ -3966,6 +3990,18 @@ spec:
                           pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/([0-9]|[1-2][0-9]|3[0-2])$|^s*((([0-9A-Fa-f]{1,4}:){7}(:|([0-9A-Fa-f]{1,4})))|(([0-9A-Fa-f]{1,4}:){6}:([0-9A-Fa-f]{1,4})?)|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){0,1}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){0,2}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){0,3}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){0,4}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){0,5}):([0-9A-Fa-f]{1,4})?))|(:(:|((:[0-9A-Fa-f]{1,4}){1,7}))))(%.+)?s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$
                           type: string
                         type: array
+                      fromCIDRGroupRefs:
+                        description: FromCIDRGroupRef is a list of CIDRs that the
+                          endpoint, subject to the rule, can or cannot receive connections
+                          from (in addition to FromEndpoints). This will match on
+                          the source IP address of incoming connections
+                        items:
+                          description: CIDRGroupRef is a reference to a CIDR Group.
+                            A CIDR Group is a list of CIDRs whose IP addresses should
+                            be considered as a same entity when applying fromCIDRGroupRefs
+                            policies on incoming network traffic.
+                          type: string
+                        type: array
                       fromCIDRSet:
                         description: "FromCIDRSet is a list of IP blocks which the
                           endpoint subject to the rule is allowed to receive connections
@@ -4673,6 +4709,18 @@ spec:
                           description: 'CIDR specifies a block of IP addresses. Example:
                             192.0.2.1/32'
                           pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/([0-9]|[1-2][0-9]|3[0-2])$|^s*((([0-9A-Fa-f]{1,4}:){7}(:|([0-9A-Fa-f]{1,4})))|(([0-9A-Fa-f]{1,4}:){6}:([0-9A-Fa-f]{1,4})?)|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){0,1}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){0,2}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){0,3}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){0,4}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){0,5}):([0-9A-Fa-f]{1,4})?))|(:(:|((:[0-9A-Fa-f]{1,4}){1,7}))))(%.+)?s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$
+                          type: string
+                        type: array
+                      fromCIDRGroupRefs:
+                        description: FromCIDRGroupRef is a list of CIDRs that the
+                          endpoint, subject to the rule, can or cannot receive connections
+                          from (in addition to FromEndpoints). This will match on
+                          the source IP address of incoming connections
+                        items:
+                          description: CIDRGroupRef is a reference to a CIDR Group.
+                            A CIDR Group is a list of CIDRs whose IP addresses should
+                            be considered as a same entity when applying fromCIDRGroupRefs
+                            policies on incoming network traffic.
                           type: string
                         type: array
                       fromCIDRSet:
