@@ -96,8 +96,7 @@ type BGPResourceManager struct {
 	bgpClusterSyncCh chan struct{}
 }
 
-// NewBGPResourceManager creates a new BGPResourceManager operator instance.
-func NewBGPResourceManager(p BGPParams) *BGPResourceManager {
+func registerBGPResourceManager(p BGPParams) *BGPResourceManager {
 	// if BGPResourceManager Control Plane is not enabled or BGPv2 API is not enabled, return nil
 	if !p.DaemonConfig.BGPControlPlaneEnabled() || !p.Config.BGPv2Enabled {
 		return nil
@@ -126,13 +125,15 @@ func NewBGPResourceManager(p BGPParams) *BGPResourceManager {
 	b.peerConfigClient = b.clientset.CiliumV2alpha1().CiliumBGPPeerConfigs()
 	b.advertClient = b.clientset.CiliumV2alpha1().CiliumBGPAdvertisements()
 
-	// initialize resource event handlers
-	b.initializeEventHandlers()
+	// initialize BGP manager jobs
+	jobGroup := b.initializeJobs()
+
+	p.LC.Append(jobGroup)
 
 	return b
 }
 
-func (b *BGPResourceManager) initializeEventHandlers() {
+func (b *BGPResourceManager) initializeJobs() job.Group {
 	jobGroup := b.jobs.NewGroup(
 		b.scope,
 		job.WithLogger(b.logger),
@@ -200,7 +201,7 @@ func (b *BGPResourceManager) initializeEventHandlers() {
 		}),
 	)
 
-	b.lc.Append(jobGroup)
+	return jobGroup
 }
 
 func (b *BGPResourceManager) initializeStores(ctx context.Context) (err error) {

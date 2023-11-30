@@ -18,7 +18,7 @@ var Cell = cell.Module(
 	"bgp-cp-operator",
 	"BGP Control Plane Operator",
 	cell.Config(Config{}),
-	cell.Provide(NewBGPResourceManager),
+	cell.Invoke(registerBGPResourceManager),
 )
 
 type Config struct {

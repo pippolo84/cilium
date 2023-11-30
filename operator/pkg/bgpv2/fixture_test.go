@@ -24,7 +24,6 @@ var (
 
 type fixture struct {
 	hive          *hive.Hive
-	manager       *BGPResourceManager
 	fakeClientSet *k8s_client.FakeClientset
 	bgppClient    cilium_client_v2alpha1.CiliumBGPPeeringPolicyInterface
 	bgpcClient    cilium_client_v2alpha1.CiliumBGPClusterConfigInterface
@@ -116,10 +115,6 @@ func newFixture() *fixture {
 
 		cell.Provide(func() k8s_client.Clientset {
 			return f.fakeClientSet
-		}),
-
-		cell.Invoke(func(m *BGPResourceManager) {
-			f.manager = m
 		}),
 
 		job.Cell,
