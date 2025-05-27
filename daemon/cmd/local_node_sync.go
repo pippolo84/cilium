@@ -76,8 +76,19 @@ func (ini *localNodeSynchronizer) SyncLocalNode(ctx context.Context, store *node
 		return
 	}
 
-	for ev := range ini.K8sLocalNode.Events(ctx) {
-		if ev.Kind == resource.Upsert {
+	localNodeEvents, localCiliumNodeEvents := ini.K8sLocalNode.Events(ctx), ini.K8sCiliumLocalNode.Events(ctx)
+
+	for {
+		select {
+		case ev, ok := <-localNodeEvents:
+			if !ok {
+				localNodeEvents = nil
+				break
+			}
+			if ev.Kind != resource.Upsert {
+				ev.Done(nil)
+				continue
+			}
 			ini.Logger.Debug("Received Node upsert event", logfields.Node, ev.Object)
 			new := parseNode(ini.Logger, ev.Object)
 			if !ini.mutableFieldsEqual(new) {
@@ -85,9 +96,29 @@ func (ini *localNodeSynchronizer) SyncLocalNode(ctx context.Context, store *node
 					ini.syncFromK8s(ln, new)
 				})
 			}
+			ev.Done(nil)
+		case ev, ok := <-localCiliumNodeEvents:
+			if !ok {
+				localCiliumNodeEvents = nil
+				break
+			}
+			if ev.Kind != resource.Upsert {
+				ev.Done(nil)
+				continue
+			}
+			ini.Logger.Debug("Received CiliumNode upsert event", logfields.CiliumNode, ev.Object)
+			n := nodeTypes.ParseCiliumNode(ev.Object)
+			store.Update(func(ln *node.LocalNode) {
+				ln.IPv4AllocCIDR = n.IPv4AllocCIDR
+				ln.IPv4SecondaryAllocCIDRs = n.IPv4SecondaryAllocCIDRs
+				ln.IPv6AllocCIDR = n.IPv6AllocCIDR
+				ln.IPv6SecondaryAllocCIDRs = n.IPv6SecondaryAllocCIDRs
+			})
+			ev.Done(nil)
 		}
-
-		ev.Done(nil)
+		if localNodeEvents == nil && localCiliumNodeEvents == nil {
+			break
+		}
 	}
 }
 

@@ -394,6 +394,9 @@ const (
 	// BackendPreferred is the indicator if this backend is preferred if active.
 	BackendPreferred = "backendPreferred"
 
+	// CiliumNode is a CiliumNode custom resource
+	CiliumNode = "ciliumNode"
+
 	// CiliumNetworkPolicy is a cilium specific NetworkPolicy
 	CiliumNetworkPolicy = "ciliumNetworkPolicy"
 
