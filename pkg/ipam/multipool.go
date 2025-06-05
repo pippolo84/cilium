@@ -294,27 +294,38 @@ func newMultiPoolManager(logger *slog.Logger, conf *option.DaemonConfig, node ag
 	// stopped, there appears to be no such signal available here. Also, don't
 	// retry events - the downstream code isn't setup to handle retries.
 	evs := node.Events(context.TODO(), resource.WithErrorHandler(resource.RetryUpTo(0)))
-	go c.ciliumNodeEventLoop(evs)
+	localCiliumNodeSynced := c.runCiliumNodeEventLoop(evs)
 	owner.UpdateCiliumNodeResource()
 
 	c.waitForAllPools()
+	<-localCiliumNodeSynced
+
+	if c.node != nil {
+		c.updateLocalNode(context.TODO())
+	}
 
 	return c
 }
 
-func (m *multiPoolManager) ciliumNodeEventLoop(evs <-chan resource.Event[*ciliumv2.CiliumNode]) {
-	for ev := range evs {
-		switch ev.Kind {
-		case resource.Upsert:
-			m.ciliumNodeUpdated(ev.Object)
-		case resource.Delete:
-			m.logger.Debug(
-				"Local CiliumNode deleted. IPAM will continue on last seen version",
-				logfields.Node, ev.Object,
-			)
+func (m *multiPoolManager) runCiliumNodeEventLoop(evs <-chan resource.Event[*ciliumv2.CiliumNode]) <-chan struct{} {
+	synced := make(chan struct{})
+	go func() {
+		for ev := range evs {
+			switch ev.Kind {
+			case resource.Sync:
+				close(synced)
+			case resource.Upsert:
+				m.ciliumNodeUpdated(ev.Object)
+			case resource.Delete:
+				m.logger.Debug(
+					"Local CiliumNode deleted. IPAM will continue on last seen version",
+					logfields.Node, ev.Object,
+				)
+			}
+			ev.Done(nil)
 		}
-		ev.Done(nil)
-	}
+	}()
+	return synced
 }
 
 // waitForAllPools waits for all pools in preallocatedIPsPerPool to have IPs available.
