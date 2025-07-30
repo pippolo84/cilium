@@ -14,11 +14,15 @@ import (
 	"github.com/cilium/cilium/pkg/controller"
 	"github.com/cilium/cilium/pkg/ipam"
 	"github.com/cilium/cilium/pkg/ipam/allocator"
+	"github.com/cilium/cilium/pkg/ipam/types"
 	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/time"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const clusterPool2MultiPoolMigrationLabel = "cilium.io/migrate-cluster-pool-to-multi-pool"
 
 type NodeHandler struct {
 	logger *slog.Logger
@@ -119,21 +123,48 @@ func (n *NodeHandler) createUpsertController(resource *v2.CiliumNode) {
 				refetchNode = false
 			}
 
-			err := n.poolManager.AllocateToNode(resource)
-			if err != nil {
-				n.logger.Warn(
-					"Failed to allocate PodCIDRs to node",
-					logfields.Error, err,
-					logfields.NodeName, resource.Name,
-				)
-				errorMessage = err.Error()
-				controllerErr = err
+			var (
+				newResource *v2.CiliumNode
+				err         error
+			)
+
+			if v1.HasLabel(resource.ObjectMeta, clusterPool2MultiPoolMigrationLabel) {
+				allocated, err := migrateToMultiPool(resource)
+				if err != nil {
+					n.logger.Warn(
+						"Failed to migrate CiliumNode from cluster-pool to multi-pool IPAM mode",
+						logfields.Error, err,
+						logfields.NodeName, resource.Name,
+					)
+					errorMessage = err.Error()
+					controllerErr = err
+				}
+
+				newResource = resource.DeepCopy()
+				newResource.Status.IPAM.OperatorStatus.Error = errorMessage
+
+				if err == nil {
+					delete(newResource.ObjectMeta.Labels, clusterPool2MultiPoolMigrationLabel)
+					newResource.Spec.IPAM.PodCIDRs = nil
+					newResource.Spec.IPAM.Pools.Allocated = allocated
+				}
+			} else {
+				err := n.poolManager.AllocateToNode(resource)
+				if err != nil {
+					n.logger.Warn(
+						"Failed to allocate PodCIDRs to node",
+						logfields.Error, err,
+						logfields.NodeName, resource.Name,
+					)
+					errorMessage = err.Error()
+					controllerErr = err
+				}
+
+				newResource = resource.DeepCopy()
+				newResource.Status.IPAM.OperatorStatus.Error = errorMessage
+
+				newResource.Spec.IPAM.Pools.Allocated = n.poolManager.AllocatedPools(newResource.Name)
 			}
-
-			newResource := resource.DeepCopy()
-			newResource.Status.IPAM.OperatorStatus.Error = errorMessage
-
-			newResource.Spec.IPAM.Pools.Allocated = n.poolManager.AllocatedPools(newResource.Name)
 
 			if !newResource.Spec.IPAM.Pools.DeepEqual(&resource.Spec.IPAM.Pools) {
 				_, err = n.nodeUpdater.Update(resource, newResource)
@@ -158,6 +189,23 @@ func (n *NodeHandler) createUpsertController(resource *v2.CiliumNode) {
 			return controllerErr
 		},
 	})
+}
+
+func migrateToMultiPool(resource *v2.CiliumNode) ([]types.IPAMPoolAllocation, error) {
+	if len(resource.Spec.IPAM.Pools.Allocated) > 0 {
+		return nil, fmt.Errorf("found unexpected allocated IP pools in CiliumNode undergoing migration to multi-pool IPAM: %v", resource.Spec.IPAM.Pools.Allocated)
+	}
+
+	cidrs := make([]types.IPAMPodCIDR, 0, len(resource.Spec.IPAM.PodCIDRs))
+	for _, cidr := range resource.Spec.IPAM.PodCIDRs {
+		cidrs = append(cidrs, types.IPAMPodCIDR(cidr))
+	}
+	return []types.IPAMPoolAllocation{
+		{
+			Pool:  "default",
+			CIDRs: cidrs,
+		},
+	}, nil
 }
 
 func controllerName(nodeName string) string {
