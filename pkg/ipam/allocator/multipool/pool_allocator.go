@@ -366,9 +366,14 @@ func (p *PoolAllocator) AllocateToNode(cn *v2.CiliumNode) error {
 				continue
 			}
 
-			occupyErr := p.occupyCIDR(cn.Name, allocatedPool.Pool, prefix)
-			if occupyErr != nil {
-				err = errors.Join(err, occupyErr)
+			if _, found := p.pools[allocatedPool.Pool]; found {
+				if occupyErr := p.occupyCIDR(cn.Name, allocatedPool.Pool, prefix); occupyErr != nil {
+					err = errors.Join(err, occupyErr)
+				}
+			} else {
+				// pool cannot be found: it must be a pool deleted before the operator restarted.
+				// Mark the CIDR as orphan to preserve node allocations.
+				p.markOrphan(cn.Name, allocatedPool.Pool, prefix)
 			}
 
 			allocatedSet[allocatedPool.Pool][prefix] = struct{}{}
