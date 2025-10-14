@@ -374,6 +374,9 @@ func (p *PoolAllocator) AllocateToNode(cn *v2.CiliumNode) error {
 				// pool cannot be found: it must be a pool deleted before the operator restarted.
 				// Mark the CIDR as orphan to preserve node allocations.
 				p.markOrphan(cn.Name, allocatedPool.Pool, prefix)
+				err = errors.Join(err,
+					fmt.Errorf("unable to find pool %s, prefix %s is still allocated to the node but is marked as orphan",
+						allocatedPool.Pool, prefix))
 			}
 
 			allocatedSet[allocatedPool.Pool][prefix] = struct{}{}
