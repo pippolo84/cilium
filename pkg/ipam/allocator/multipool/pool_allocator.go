@@ -410,7 +410,6 @@ func (p *PoolAllocator) AllocateToNode(cn *v2.CiliumNode) error {
 					fmt.Errorf("failed to allocate ipv4 address for node %q from pool %q: %w",
 						cn.Name, reqPool.Pool, allocErr))
 			}
-
 		}
 		if option.Config.EnableIPv6 {
 			neededIPv6Addrs := big.NewInt(int64(reqPool.Needed.IPv6Addrs))
