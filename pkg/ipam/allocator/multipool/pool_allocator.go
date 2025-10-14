@@ -391,6 +391,8 @@ func (p *PoolAllocator) AllocateToNode(cn *v2.CiliumNode) error {
 		}
 	}
 
+	// FIXME: release any orphan cidrs no longer present in allocatedPool
+
 	// Delay allocation until we have occupied the CIDRs of all existing nodes.
 	// The node manager will call us again once it has ensured that all nodes
 	// had their CIDRs occupied, after which p.ready will be set to true
