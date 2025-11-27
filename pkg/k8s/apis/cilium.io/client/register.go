@@ -88,11 +88,15 @@ const (
 
 	// CPIPCRDName is the full name of the CiliumPodIPPool CRD.
 	CPIPCRDName = k8sconstv2alpha1.CPIPKindDefinition + "/" + k8sconstv2alpha1.CustomResourceDefinitionVersion
+
 	// CGCCCRDName is the full name of the CiliumGatewayClassConfig CRD.
 	CGCCCRDName = k8sconstv2alpha1.CGCCKindDefinition + "/" + k8sconstv2alpha1.CustomResourceDefinitionVersion
 
 	// CiliumNetworkDriverConfigCRDName is the full name of the CiliumNetworkDriverConfig CRD.
 	CiliumNetworkDriverConfigCRDName = k8sconstv2alpha1.CiliumNetworkDriverConfigKindDefinition + "/" + k8sconstv2alpha1.CustomResourceDefinitionVersion
+
+	// CRIPCRDName is the full name of the CiliumResourceIPPool CRD.
+	CRIPCRDName = k8sconstv2alpha1.CRIPKindDefinition + "/" + k8sconstv2alpha1.CustomResourceDefinitionVersion
 )
 
 type CRDList struct {
@@ -191,6 +195,10 @@ func CustomResourceDefinitionList() map[string]*CRDList {
 			Name:     CiliumNetworkDriverConfigCRDName,
 			FullName: k8sconstv2alpha1.CiliumNetworkDriverConfigName,
 		},
+		synced.CRDResourceName(k8sconstv2alpha1.CRIPName): {
+			Name:     CRIPCRDName,
+			FullName: k8sconstv2alpha1.CRIPName,
+		},
 	}
 }
 
@@ -278,6 +286,9 @@ var (
 
 	//go:embed crds/v2alpha1/ciliumnetworkdriverconfigs.yaml
 	crdsv2Alpha1CiliumNetworkDriverConfigs []byte
+
+	//go:embed crds/v2alpha1/ciliumresourceippools.yaml
+	crdsv2Alpha1CiliumResourceIPPools []byte
 )
 
 // GetPregeneratedCRD returns the pregenerated CRD based on the requested CRD
@@ -336,6 +347,8 @@ func GetPregeneratedCRD(logger *slog.Logger, crdName string) apiextensionsv1.Cus
 		crdBytes = crdsv2Alpha1CiliumGatewayClassConfigs
 	case CiliumNetworkDriverConfigCRDName:
 		crdBytes = crdsv2Alpha1CiliumNetworkDriverConfigs
+	case CRIPCRDName:
+		crdBytes = crdsv2Alpha1CiliumResourceIPPools
 	default:
 		logging.Fatal(logger, "Pregenerated CRD does not exist", logfields.CRDName, crdName)
 	}

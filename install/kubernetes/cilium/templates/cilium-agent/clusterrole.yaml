@@ -112,6 +112,7 @@ rules:
   - ciliuml2announcementpolicies
   - ciliumpodippools
   - ciliumnetworkdriverconfigs
+  - ciliumresourceippools
   verbs:
   - list
   - watch
