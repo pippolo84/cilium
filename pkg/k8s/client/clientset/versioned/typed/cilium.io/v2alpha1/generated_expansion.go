@@ -30,3 +30,5 @@ type CiliumNetworkDriverConfigExpansion interface{}
 type CiliumNodeConfigExpansion interface{}
 
 type CiliumPodIPPoolExpansion interface{}
+
+type CiliumResourceIPPoolExpansion interface{}

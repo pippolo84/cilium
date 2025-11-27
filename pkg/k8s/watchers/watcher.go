@@ -205,7 +205,7 @@ var ciliumResourceToGroupMapping = map[string]watcherInfo{
 	synced.CRDResourceName(v2alpha1.L2AnnouncementName):            {skip, ""}, // Handled by L2 announcement directly
 	synced.CRDResourceName(v2alpha1.CPIPName):                      {skip, ""}, // Handled by multi-pool IPAM allocator
 	synced.CRDResourceName(v2alpha1.CiliumNetworkDriverConfigName): {skip, ""}, // Handled by Network Driver package
-
+	synced.CRDResourceName(v2alpha1.CRIPName):                      {skip, ""}, // Handled by multi-pool DRA resource IPAM allocator
 }
 
 func GetGroupsForCiliumResources(logger *slog.Logger, ciliumResources []string) ([]string, []string) {

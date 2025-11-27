@@ -37,6 +37,8 @@ type Interface interface {
 	CiliumNodeConfigs() CiliumNodeConfigInformer
 	// CiliumPodIPPools returns a CiliumPodIPPoolInformer.
 	CiliumPodIPPools() CiliumPodIPPoolInformer
+	// CiliumResourceIPPools returns a CiliumResourceIPPoolInformer.
+	CiliumResourceIPPools() CiliumResourceIPPoolInformer
 }
 
 type version struct {
@@ -113,4 +115,9 @@ func (v *version) CiliumNodeConfigs() CiliumNodeConfigInformer {
 // CiliumPodIPPools returns a CiliumPodIPPoolInformer.
 func (v *version) CiliumPodIPPools() CiliumPodIPPoolInformer {
 	return &ciliumPodIPPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// CiliumResourceIPPools returns a CiliumResourceIPPoolInformer.
+func (v *version) CiliumResourceIPPools() CiliumResourceIPPoolInformer {
+	return &ciliumResourceIPPoolInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }
