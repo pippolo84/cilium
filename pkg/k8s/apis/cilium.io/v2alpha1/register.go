@@ -100,6 +100,11 @@ const (
 	CGCCListName       = "ciliumgatewayclassconfiglists"
 	CGCCKindDefinition = "CiliumGatewayClassConfig"
 	CGCCName           = CGCCPluralName + "." + CustomResourceDefinitionGroup
+
+	// CiliumResourcePPool (CRIP)
+	CRIPPluralName     = "ciliumresourceippools"
+	CRIPKindDefinition = "CiliumResourceIPPool"
+	CRIPName           = CRIPPluralName + "." + CustomResourceDefinitionGroup
 )
 
 // SchemeGroupVersion is group version used to register these objects
@@ -153,6 +158,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&CiliumPodIPPoolList{},
 		&CiliumNodeConfig{},
 		&CiliumNodeConfigList{},
+		&CiliumResourceIPPool{},
+		&CiliumResourceIPPoolList{},
 
 		// new BGP types
 		&CiliumBGPClusterConfig{},

@@ -261,6 +261,7 @@ rules:
   - ciliuml2announcementpolicies.cilium.io
   - ciliumpodippools.cilium.io
   - ciliumgatewayclassconfigs.cilium.io
+  - ciliumresourceippools.cilium.io
 - apiGroups:
   - cilium.io
   resources:
@@ -269,6 +270,7 @@ rules:
   - ciliumbgpclusterconfigs
   - ciliumbgpnodeconfigoverrides
   - ciliumbgppeerconfigs
+  - ciliumresourceippools
   verbs:
   - get
   - list
