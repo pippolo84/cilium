@@ -28,6 +28,7 @@ import (
 	"github.com/cilium/cilium/operator/api"
 	"github.com/cilium/cilium/operator/auth"
 	"github.com/cilium/cilium/operator/doublewrite"
+	"github.com/cilium/cilium/operator/draipam"
 	"github.com/cilium/cilium/operator/endpointgc"
 	"github.com/cilium/cilium/operator/endpointslicegc"
 	"github.com/cilium/cilium/operator/identitygc"
@@ -320,6 +321,9 @@ var (
 			// Provides the ztunnel daemonset controller if ztunnel encryption
 			// is specified.
 			ztunnel.Cell,
+
+			// provide
+			draipam.Cell,
 		),
 	)
 
