@@ -33,6 +33,7 @@ import (
 	"github.com/cilium/cilium/operator/identitygc"
 	operatorK8s "github.com/cilium/cilium/operator/k8s"
 	operatorMetrics "github.com/cilium/cilium/operator/metrics"
+	"github.com/cilium/cilium/operator/networkdriveripam"
 	operatorOption "github.com/cilium/cilium/operator/option"
 	"github.com/cilium/cilium/operator/pkg/bgp"
 	"github.com/cilium/cilium/operator/pkg/ciliumendpointslice"
@@ -320,6 +321,9 @@ var (
 			// Provides the ztunnel daemonset controller if ztunnel encryption
 			// is specified.
 			ztunnel.Cell,
+
+			// Provide Multi Pool IPAM for Resources.
+			networkdriveripam.Cell,
 		),
 	)
 
