@@ -25,6 +25,7 @@ import (
 	k8sClient "github.com/cilium/cilium/pkg/k8s/client"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
+	"github.com/cilium/cilium/pkg/option"
 )
 
 const (
@@ -46,13 +47,16 @@ type DevicesLister func(
 
 // Driver is the core structure of the DRA driver.
 type Driver struct {
-	logger    *slog.Logger
-	cs        k8sClient.Clientset
-	jg        job.Group
-	name      string
-	nodeName  string
-	draPlugin *kubeletplugin.Helper
-	nriPlugin stub.Stub
+	logger      *slog.Logger
+	cs          k8sClient.Clientset
+	jg          job.Group
+	ipam        *multiPoolManager
+	name        string
+	nodeName    string
+	draPlugin   *kubeletplugin.Helper
+	nriPlugin   stub.Stub
+	ipv4Enabled bool
+	ipv6Enabled bool
 
 	lock            sync.Mutex
 	podDeviceConfig map[types.UID][]AllocatedDevice // maps pod UID to allocated devices with attributes
@@ -60,13 +64,16 @@ type Driver struct {
 	listDevices DevicesLister
 }
 
-func registerDRA(lc cell.Lifecycle, logger *slog.Logger, cs k8sClient.Clientset, jg job.Group) {
+func registerDRA(lc cell.Lifecycle, logger *slog.Logger, cs k8sClient.Clientset, jg job.Group, mpMgr *multiPoolManager, daemonCfg *option.DaemonConfig) {
 	driver := &Driver{
 		logger:          logger,
 		cs:              cs,
 		jg:              jg,
+		ipam:            mpMgr,
 		name:            driverName,
 		nodeName:        nodeTypes.GetName(),
+		ipv4Enabled:     daemonCfg.EnableIPv4,
+		ipv6Enabled:     daemonCfg.EnableIPv6,
 		podDeviceConfig: make(map[types.UID][]AllocatedDevice),
 	}
 

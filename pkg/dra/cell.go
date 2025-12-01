@@ -12,5 +12,9 @@ var Cell = cell.Module(
 	"dra-driver",
 	"Cilium network DRA driver",
 
+	cell.Group(
+		cell.Provide(NewMultiPoolManager),
+		cell.Invoke(runEventsHandler),
+	),
 	cell.Invoke(registerDRA),
 )

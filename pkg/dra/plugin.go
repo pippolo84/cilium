@@ -5,8 +5,11 @@ package dra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,12 +19,19 @@ import (
 	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
+// DeviceConfig represents the configuration to be applied to devices in a claim
+type DeviceConfig struct {
+	IPPool string `json:"ip-pool"`
+}
+
 // AllocatedDevice represents a network device allocated to a pod with its configuration
 type AllocatedDevice struct {
 	Name       string
 	Attributes map[resourceapi.QualifiedName]resourceapi.DeviceAttribute
 	PoolName   string
 	Request    string
+	IPv4       net.IP
+	IPv6       net.IP
 }
 
 // PrepareResourceClaims is called to prepare all resources allocated for the given ResourceClaims
@@ -85,6 +95,11 @@ func (driver *Driver) HandleError(ctx context.Context, err error, msg string) {
 	runtime.HandleErrorWithContext(ctx, err, msg)
 }
 
+type ipAddrs struct {
+	ipv4 net.IP
+	ipv6 net.IP
+}
+
 func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) (kubeletplugin.PrepareResult, error) {
 	// Extract pod UIDs that this claim is reserved for
 	podUIDs := []types.UID{}
@@ -124,6 +139,69 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 		allocations []AllocatedDevice
 	)
 
+	requestsPool := make(map[string]string)
+	for _, config := range claim.Spec.Devices.Config {
+		var cfg DeviceConfig
+		if err := json.Unmarshal(config.Opaque.Parameters.Raw, &cfg); err != nil {
+			return kubeletplugin.PrepareResult{}, fmt.Errorf("failed to unmarshal config for requests %s: %w", strings.Join(config.Requests, ","), err)
+		}
+		for _, req := range config.Requests {
+			requestsPool[req] = cfg.IPPool
+		}
+	}
+
+	// For each request, allocate count IPs from the pool specified in the request config.
+	reqsAddrs := make(map[string][]ipAddrs)
+	for _, req := range claim.Spec.Devices.Requests {
+		// FIXME: add support for FirstAvailable
+		if len(req.FirstAvailable) > 0 {
+			return kubeletplugin.PrepareResult{}, fmt.Errorf("firstAvailable allocation mode not supported yet")
+		}
+
+		var addrs ipAddrs
+		for i := range req.Exactly.Count {
+			pool, found := requestsPool[req.Name]
+			if !found {
+				return kubeletplugin.PrepareResult{}, fmt.Errorf("unable to find IP pool for request %s", req.Name)
+			}
+			if driver.ipv4Enabled {
+				res, err := driver.ipam.allocateNext(fmt.Sprintf("%s-%d", req.Name, i), Pool(pool), IPv4, true)
+				if err != nil {
+					driver.logger.ErrorContext(ctx, "Failed to allocate IPv4 from pool",
+						logfields.K8sNamespace, claim.Namespace,
+						logfields.Name, claim.Name,
+						logfields.Request, req.Name,
+						logfields.PoolName, pool,
+						logfields.Error, err,
+					)
+					errs = append(errs, fmt.Errorf("failed to allocate IPv4 address from pool %s for request %s", pool, req.Name))
+				} else {
+					addrs.ipv4 = res.IP
+				}
+			}
+			if driver.ipv4Enabled {
+				res, err := driver.ipam.allocateNext(fmt.Sprintf("%s-%d", req.Name, i), Pool(pool), IPv6, true)
+				if err != nil {
+					driver.logger.ErrorContext(ctx, "Failed to allocate IPv6 from pool",
+						logfields.K8sNamespace, claim.Namespace,
+						logfields.Name, claim.Name,
+						logfields.Request, req.Name,
+						logfields.PoolName, pool,
+						logfields.Error, err,
+					)
+					errs = append(errs, fmt.Errorf("failed to allocate IPv6 address from pool %s for request %s", pool, req.Name))
+				} else {
+					addrs.ipv6 = res.IP
+				}
+			}
+			reqsAddrs[req.Name] = append(reqsAddrs[req.Name], addrs)
+		}
+	}
+
+	if len(errs) > 0 {
+		return kubeletplugin.PrepareResult{}, errors.Join(errs...)
+	}
+
 	for _, allocation := range claim.Status.Allocation.Devices.Results {
 		// filter out devices not managed by this driver
 		if allocation.Driver != driver.name {
@@ -133,7 +211,7 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 		// get device attributes from published resources
 		deviceAttrs, err := driver.getDeviceAttributes(ctx, allocation.Device)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get attributes for device %s: %w", allocation.Device, err))
+			errs = append(errs, fmt.Errorf("failed to get attributes for device %s from request %s: %w", allocation.Device, allocation.Request, err))
 			continue
 		}
 
@@ -143,11 +221,27 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 			PoolName:   allocation.Pool,
 			Request:    allocation.Request,
 		}
+
+		addrs, found := reqsAddrs[allocation.Request]
+		if !found || len(addrs) == 0 {
+			errs = append(errs, fmt.Errorf("failed to find IP addresses for device %s from request %s", allocation.Device, allocation.Request))
+			continue
+		}
+		if driver.ipv4Enabled {
+			device.IPv4 = addrs[0].ipv4
+		}
+		if driver.ipv6Enabled {
+			device.IPv6 = addrs[0].ipv6
+		}
+		reqsAddrs[allocation.Request] = addrs[1:]
+
 		allocations = append(allocations, device)
 
 		driver.logger.DebugContext(ctx, "Prepared device for claim",
 			logfields.Device, allocation.Device,
 			logfields.Attributes, deviceAttrs,
+			logfields.IPv4, device.IPv4,
+			logfields.IPv6, device.IPv6,
 			logfields.K8sNamespace, claim.Namespace,
 			logfields.Name, claim.Name,
 		)
