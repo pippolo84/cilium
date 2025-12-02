@@ -6,6 +6,7 @@ package dra
 import (
 	"context"
 	"fmt"
+	"net"
 	"path/filepath"
 
 	"github.com/containerd/nri/pkg/api"
@@ -54,7 +55,7 @@ func (driver *Driver) RunPodSandbox(ctx context.Context, podSandbox *api.PodSand
 				allocatedDevice.Name, podSandbox.Namespace, podSandbox.Name, err)
 		}
 
-		driver.logger.DebugContext(ctx, "Successfully configured device device for pod",
+		driver.logger.DebugContext(ctx, "Successfully configured device for pod",
 			logfields.Device, allocatedDevice.Name,
 			logfields.K8sNamespace, podSandbox.Namespace,
 			logfields.Name, podSandbox.Name,
@@ -87,12 +88,6 @@ func (driver *Driver) configureDeviceForPod(ctx context.Context, device Allocate
 		return fmt.Errorf("failed to find device %s", device.Name)
 	}
 
-	// fetch interface IP addresses
-	addrs, err := safenetlink.AddrList(link, netlink.FAMILY_ALL)
-	if err != nil {
-		return fmt.Errorf("failed to get dummy device %s ip addresses: %w", device.Name, err)
-	}
-
 	// move interface to pod network namespace
 	nsPath := podNetworkNamespacePath(podSandbox)
 	podNs, err := netns.OpenPinned(nsPath)
@@ -106,11 +101,28 @@ func (driver *Driver) configureDeviceForPod(ctx context.Context, device Allocate
 			device.Name, podSandbox.Name, err)
 	}
 
-	// re-assign addresses to interface
+	// assign addresses to interface
 	if err := podNs.Do(func() error {
-		for _, addr := range addrs {
-			if err := netlink.AddrAdd(link, &addr); err != nil {
-				return fmt.Errorf("failed to add addr %s to device %s: %w", addr.String(), link.Attrs().Name, err)
+		if driver.ipv4Enabled {
+			v4Addr := netlink.Addr{
+				IPNet: &net.IPNet{
+					IP:   device.IPv4,
+					Mask: net.CIDRMask(32, 32),
+				},
+			}
+			if err := netlink.AddrAdd(link, &v4Addr); err != nil {
+				return fmt.Errorf("failed to add addr %s to device %s: %w", v4Addr.String(), link.Attrs().Name, err)
+			}
+		}
+		if driver.ipv6Enabled {
+			v6Addr := netlink.Addr{
+				IPNet: &net.IPNet{
+					IP:   device.IPv6,
+					Mask: net.CIDRMask(128, 128),
+				},
+			}
+			if err := netlink.AddrAdd(link, &v6Addr); err != nil {
+				return fmt.Errorf("failed to add addr %s to device %s: %w", v6Addr.String(), link.Attrs().Name, err)
 			}
 		}
 		return nil
@@ -122,7 +134,8 @@ func (driver *Driver) configureDeviceForPod(ctx context.Context, device Allocate
 		logfields.Device, device.Name,
 		logfields.K8sNamespace, podSandbox.Namespace,
 		logfields.Name, podSandbox.Name,
-		logfields.IPAddrs, addrs,
+		logfields.IPv4, device.IPv4,
+		logfields.IPv6, device.IPv6,
 	)
 
 	return nil
