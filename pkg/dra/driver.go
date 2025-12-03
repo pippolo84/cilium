@@ -35,6 +35,9 @@ const (
 	draRegistrationRetry   = time.Second
 	draRegistrationTimeout = 30 * time.Second
 
+	draIPAMRetry      = 5 * time.Second
+	draIPAMMaxRetries = 60
+
 	resourcesProbeInterval = 3 * time.Second
 )
 

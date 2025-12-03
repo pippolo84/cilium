@@ -17,6 +17,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/resiliency"
 )
 
 // DeviceConfig represents the configuration to be applied to devices in a claim
@@ -95,9 +96,10 @@ func (driver *Driver) HandleError(ctx context.Context, err error, msg string) {
 	runtime.HandleErrorWithContext(ctx, err, msg)
 }
 
-type ipAddrs struct {
-	ipv4 net.IP
-	ipv6 net.IP
+type ipamRequest struct {
+	owner  string
+	pool   string
+	family Family
 }
 
 func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) (kubeletplugin.PrepareResult, error) {
@@ -134,73 +136,65 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 		return kubeletplugin.PrepareResult{}, nil
 	}
 
-	var (
-		errs        []error
-		allocations []AllocatedDevice
-	)
+	var allocations []AllocatedDevice
 
-	requestsPool := make(map[string]string)
+	poolsForRequest := make(map[string]string)
 	for _, config := range claim.Spec.Devices.Config {
 		var cfg DeviceConfig
 		if err := json.Unmarshal(config.Opaque.Parameters.Raw, &cfg); err != nil {
 			return kubeletplugin.PrepareResult{}, fmt.Errorf("failed to unmarshal config for requests %s: %w", strings.Join(config.Requests, ","), err)
 		}
 		for _, req := range config.Requests {
-			requestsPool[req] = cfg.IPPool
+			poolsForRequest[req] = cfg.IPPool
 		}
 	}
 
-	// For each request, allocate count IPs from the pool specified in the request config.
-	reqsAddrs := make(map[string][]ipAddrs)
-	for _, req := range claim.Spec.Devices.Requests {
-		// FIXME: add support for FirstAvailable
-		if len(req.FirstAvailable) > 0 {
-			return kubeletplugin.PrepareResult{}, fmt.Errorf("firstAvailable allocation mode not supported yet")
+	// First collect all IPAM requests for each device request
+	var (
+		ipamReqsV4, ipamReqsV6 map[string][]ipamRequest
+		err                    error
+	)
+	if driver.ipv4Enabled {
+		ipamReqsV4, err = ipamRequests(claim.Spec.Devices.Requests, poolsForRequest, IPv4)
+		if err != nil {
+			return kubeletplugin.PrepareResult{}, fmt.Errorf("failed to parse IPAM v4 configuration: %w", err)
 		}
-
-		var addrs ipAddrs
-		for i := range req.Exactly.Count {
-			pool, found := requestsPool[req.Name]
-			if !found {
-				return kubeletplugin.PrepareResult{}, fmt.Errorf("unable to find IP pool for request %s", req.Name)
-			}
-			if driver.ipv4Enabled {
-				res, err := driver.ipam.allocateNext(fmt.Sprintf("%s-%d", req.Name, i), Pool(pool), IPv4, true)
-				if err != nil {
-					driver.logger.ErrorContext(ctx, "Failed to allocate IPv4 from pool",
-						logfields.K8sNamespace, claim.Namespace,
-						logfields.Name, claim.Name,
-						logfields.Request, req.Name,
-						logfields.PoolName, pool,
-						logfields.Error, err,
-					)
-					errs = append(errs, fmt.Errorf("failed to allocate IPv4 address from pool %s for request %s", pool, req.Name))
-				} else {
-					addrs.ipv4 = res.IP
-				}
-			}
-			if driver.ipv4Enabled {
-				res, err := driver.ipam.allocateNext(fmt.Sprintf("%s-%d", req.Name, i), Pool(pool), IPv6, true)
-				if err != nil {
-					driver.logger.ErrorContext(ctx, "Failed to allocate IPv6 from pool",
-						logfields.K8sNamespace, claim.Namespace,
-						logfields.Name, claim.Name,
-						logfields.Request, req.Name,
-						logfields.PoolName, pool,
-						logfields.Error, err,
-					)
-					errs = append(errs, fmt.Errorf("failed to allocate IPv6 address from pool %s for request %s", pool, req.Name))
-				} else {
-					addrs.ipv6 = res.IP
-				}
-			}
-			reqsAddrs[req.Name] = append(reqsAddrs[req.Name], addrs)
+	}
+	if driver.ipv6Enabled {
+		ipamReqsV6, err = ipamRequests(claim.Spec.Devices.Requests, poolsForRequest, IPv6)
+		if err != nil {
+			return kubeletplugin.PrepareResult{}, fmt.Errorf("failed to parse IPAM v6 configuration: %w", err)
 		}
 	}
 
-	if len(errs) > 0 {
-		return kubeletplugin.PrepareResult{}, errors.Join(errs...)
+	// Then try to fulfill all the requests in one go, to let the operator initiate the needed
+	// CIDRs allocation to the node from all the involved pools.
+	// This is needed to reduce the overall time to allocate all the addresses.
+	addrsReqsV4, addrsReqsV6 := map[string][]net.IP{}, map[string][]net.IP{}
+	if err := resiliency.Retry(ctx, draIPAMRetry, draIPAMMaxRetries, func(ctx context.Context, retries int) (bool, error) {
+		var addrsV4, addrsV6 map[string][]net.IP
+		if driver.ipv4Enabled {
+			addrsV4, ipamReqsV4 = addrsAllocation(driver.ipam, ipamReqsV4)
+		}
+		if driver.ipv6Enabled {
+			addrsV6, ipamReqsV6 = addrsAllocation(driver.ipam, ipamReqsV6)
+		}
+		for req, addrs := range addrsV4 {
+			addrsReqsV4[req] = append(addrsReqsV4[req], addrs...)
+		}
+		for req, addrs := range addrsV6 {
+			addrsReqsV6[req] = append(addrsReqsV6[req], addrs...)
+		}
+		if len(ipamReqsV4) > 0 || len(ipamReqsV6) > 0 {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		driver.logger.ErrorContext(ctx, "Failed to allocate IP addresses", logfields.Error, err)
+		return kubeletplugin.PrepareResult{}, fmt.Errorf("failed to allocate IP addresses")
 	}
+
+	var errs []error
 
 	for _, allocation := range claim.Status.Allocation.Devices.Results {
 		// filter out devices not managed by this driver
@@ -222,18 +216,24 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 			Request:    allocation.Request,
 		}
 
-		addrs, found := reqsAddrs[allocation.Request]
-		if !found || len(addrs) == 0 {
-			errs = append(errs, fmt.Errorf("failed to find IP addresses for device %s from request %s", allocation.Device, allocation.Request))
-			continue
-		}
 		if driver.ipv4Enabled {
-			device.IPv4 = addrs[0].ipv4
+			addrs, found := addrsReqsV4[allocation.Request]
+			if !found || len(addrs) == 0 {
+				errs = append(errs, fmt.Errorf("failed to find IP addresses for device %s from request %s", allocation.Device, allocation.Request))
+				continue
+			}
+			device.IPv4 = addrs[0]
+			addrsReqsV4[allocation.Request] = addrs[1:]
 		}
 		if driver.ipv6Enabled {
-			device.IPv6 = addrs[0].ipv6
+			addrs, found := addrsReqsV6[allocation.Request]
+			if !found || len(addrs) == 0 {
+				errs = append(errs, fmt.Errorf("failed to find IP addresses for device %s from request %s", allocation.Device, allocation.Request))
+				continue
+			}
+			device.IPv6 = addrs[0]
+			addrsReqsV6[allocation.Request] = addrs[1:]
 		}
-		reqsAddrs[allocation.Request] = addrs[1:]
 
 		allocations = append(allocations, device)
 
@@ -259,6 +259,53 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 	}
 
 	return kubeletplugin.PrepareResult{}, errors.Join(errs...)
+}
+
+func ipamRequests(deviceReqs []resourceapi.DeviceRequest, poolsForRequest map[string]string, family Family) (map[string][]ipamRequest, error) {
+	ipamReqs := map[string][]ipamRequest{}
+
+	for _, req := range deviceReqs {
+		// FIXME: add support for FirstAvailable
+		if len(req.FirstAvailable) > 0 {
+			return nil, errors.New("firstAvailable allocation mode not supported yet")
+		}
+
+		addrsReqs := make([]ipamRequest, 0, req.Exactly.Count)
+		for i := range req.Exactly.Count {
+			pool, found := poolsForRequest[req.Name]
+			if !found {
+				return nil, fmt.Errorf("unable to find IP pool for request %s", req.Name)
+			}
+
+			addrsReqs = append(addrsReqs, ipamRequest{
+				owner:  fmt.Sprintf("%s-%d", req.Name, i),
+				pool:   pool,
+				family: family,
+			})
+		}
+		ipamReqs[req.Name] = addrsReqs
+	}
+	return ipamReqs, nil
+}
+
+func addrsAllocation(ipam *multiPoolManager, requests map[string][]ipamRequest) (map[string][]net.IP, map[string][]ipamRequest) {
+	satisfied := map[string][]net.IP{}
+	unsatisfied := map[string][]ipamRequest{}
+
+	var addrs []net.IP
+	for reqName, ipamReqs := range requests {
+		for _, req := range ipamReqs {
+			res, err := ipam.allocateNext(req.owner, Pool(req.pool), req.family, true)
+			if err != nil {
+				unsatisfied[reqName] = append(unsatisfied[reqName], req)
+				continue
+			}
+			addrs = append(addrs, res.IP)
+		}
+		satisfied[reqName] = addrs
+	}
+
+	return satisfied, unsatisfied
 }
 
 func (driver *Driver) getDeviceAttributes(ctx context.Context, target string) (map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, error) {
