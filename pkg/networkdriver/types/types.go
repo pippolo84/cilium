@@ -102,14 +102,30 @@ type RouteSet map[netip.Prefix]AddrSet
 
 type AddrSet map[netip.Prefix]struct{}
 
-type DeviceConfig struct {
+// DeviceClaimConfig is the device configuration set in the ResourceClaim Status.
+type DeviceClaimConfig struct {
 	Ipv4Addr netip.Prefix `json:"ipv4Addr"`
+	IPPool   string       `json:"ip-pool"`
 	Routes   RouteSet
 	Vlan     uint16
 }
 
-func (d *DeviceConfig) Empty() bool {
+func (d *DeviceClaimConfig) Empty() bool {
 	return d.Ipv4Addr == (netip.Prefix{}) &&
+		d.IPPool == "" &&
 		d.Routes == nil &&
 		d.Vlan == 0
+}
+
+// DeviceAllocationConfig is the additional device configuration resulting from
+// processing the DeviceClaimConfig in the PrepareResourceClaims.
+type DeviceAllocationConfig struct {
+	IPv4 netip.Addr
+	IPv6 netip.Addr
+}
+
+// DeviceConfig is the complete device configuration that is set in the NRI plugin.
+type DeviceConfig struct {
+	DeviceClaimConfig
+	DeviceAllocationConfig
 }
