@@ -10,10 +10,12 @@ import (
 	"github.com/cilium/hive/job"
 	kube_types "k8s.io/apimachinery/pkg/types"
 
+	"github.com/cilium/cilium/daemon/k8s"
 	k8sClient "github.com/cilium/cilium/pkg/k8s/client"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/networkdriver/types"
+	"github.com/cilium/cilium/pkg/option"
 )
 
 // Cell implements the Cilium Network Driver for exposing
@@ -22,6 +24,7 @@ var Cell = cell.Module(
 	"network-driver",
 	"Cilium Network Driver",
 
+	cell.Provide(NewMultiPoolManager),
 	cell.Invoke(registerNetworkDriver),
 )
 
@@ -32,6 +35,10 @@ type networkDriverParams struct {
 	Lifecycle cell.Lifecycle
 	ClientSet k8sClient.Clientset
 	JobGroup  job.Group
+	DaemonCfg *option.DaemonConfig
+
+	IPAM      *multiPoolManager
+	LocalNode k8s.LocalCiliumNodeResource
 }
 
 // getNetworkDriverConfig returns the network driver configuration.
@@ -88,7 +95,11 @@ func registerNetworkDriver(params networkDriverParams) *Driver {
 		kubeClient:     params.ClientSet,
 		deviceManagers: make(map[types.DeviceManagerType]types.DeviceManager),
 		config:         *cfg,
+		ipv4Enabled:    params.DaemonCfg.EnableIPv4,
+		ipv6Enabled:    params.DaemonCfg.EnableIPv6,
 		allocations:    make(map[kube_types.UID]map[kube_types.UID][]allocation),
+		ipam:           params.IPAM,
+		localNode:      params.LocalNode,
 	}
 
 	params.Lifecycle.Append(driver)
