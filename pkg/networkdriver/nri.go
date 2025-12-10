@@ -5,8 +5,8 @@ package networkdriver
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net"
 	"net/netip"
 	"path"
 
@@ -17,6 +17,7 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/vishvananda/netlink"
+	"go4.org/netipx"
 	kube_types "k8s.io/apimachinery/pkg/types"
 )
 
@@ -80,20 +81,12 @@ func (driver *Driver) RunPodSandbox(ctx context.Context, podSandbox *api.PodSand
 				}
 
 				if err := podNs.Do(func() error {
-					if !a.Config.Empty() {
-						if a.Config.IPv4Addr != (netip.Prefix{}) {
-							ip, n, err := net.ParseCIDR(a.Config.IPv4Addr.String())
-							if err == nil {
-								if err := netlink.AddrAdd(l, &netlink.Addr{IPNet: &net.IPNet{IP: ip, Mask: n.Mask}}); err != nil {
-									return err
-								}
-							}
-						}
+					if err := driver.configureIPs(l, AddrAdd, a.Config.IPv4Addr, a.Config.IPv6Addr); err != nil {
+						return err
 					}
 					if err := netlink.LinkSetUp(l); err != nil {
 						return err
 					}
-
 					return nil
 				}); err != nil {
 					return err
@@ -152,6 +145,10 @@ func (driver *Driver) StopPodSandbox(ctx context.Context, podSandbox *api.PodSan
 						return err
 					}
 
+					if err := driver.configureIPs(l, AddrDel, a.Config.IPv4Addr, a.Config.IPv6Addr); err != nil {
+						return err
+					}
+
 					if err := netlink.LinkSetDown(l); err != nil {
 						return err
 					}
@@ -171,4 +168,37 @@ func (driver *Driver) StopPodSandbox(ctx context.Context, podSandbox *api.PodSan
 	})
 
 	return err
+}
+
+func (driver *Driver) configureIPs(l netlink.Link, action Action, ipv4, ipv6 netip.Prefix) error {
+	var (
+		addrs []netlink.Addr
+		errs  []error
+	)
+
+	if driver.ipv4Enabled && ipv4.IsValid() {
+		addrs = append(addrs, netlink.Addr{
+			IPNet: netipx.PrefixIPNet(ipv4),
+		})
+	}
+	if driver.ipv6Enabled && ipv6.IsValid() {
+		addrs = append(addrs, netlink.Addr{
+			IPNet: netipx.PrefixIPNet(ipv6),
+		})
+	}
+
+	for _, addr := range addrs {
+		switch action {
+		case AddrAdd:
+			if err := netlink.AddrAdd(l, &addr); err != nil {
+				errs = append(errs, fmt.Errorf("failed to add addr %s to device %s: %w", addr.String(), l.Attrs().Name, err))
+			}
+		case AddrDel:
+			if err := netlink.AddrDel(l, &addr); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete addr %s to device %s: %w", addr.String(), l.Attrs().Name, err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
 }

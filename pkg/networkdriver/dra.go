@@ -46,7 +46,7 @@ func (driver *Driver) releaseAddrs(cfg types.DeviceConfig) error {
 		}
 	}
 	if driver.ipv6Enabled {
-		if err := driver.ipam.releaseIP(cfg.IPv4Addr.Addr().AsSlice(), Pool(cfg.IPPool), IPv6, true); err != nil {
+		if err := driver.ipam.releaseIP(cfg.IPv6Addr.Addr().AsSlice(), Pool(cfg.IPPool), IPv6, true); err != nil {
 			errs = append(errs, fmt.Errorf("failed to release IP address: %w", err))
 		}
 	}

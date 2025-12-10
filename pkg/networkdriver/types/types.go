@@ -118,6 +118,7 @@ type DeviceConfig struct {
 
 func (d *DeviceConfig) Empty() bool {
 	return d.IPv4Addr == (netip.Prefix{}) &&
+		d.IPv6Addr == (netip.Prefix{}) &&
 		d.IPPool == "" &&
 		d.Routes == nil &&
 		d.Vlan == 0
