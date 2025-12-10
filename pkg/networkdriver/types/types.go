@@ -104,15 +104,13 @@ type AddrSet map[netip.Prefix]struct{}
 
 // DeviceClaimConfig is the device configuration set in the ResourceClaim Status.
 type DeviceClaimConfig struct {
-	Ipv4Addr netip.Prefix `json:"ipv4Addr"`
-	IPPool   string       `json:"ip-pool"`
-	Routes   RouteSet
-	Vlan     uint16
+	IPPool string `json:"ip-pool"`
+	Routes RouteSet
+	Vlan   uint16
 }
 
 func (d *DeviceClaimConfig) Empty() bool {
-	return d.Ipv4Addr == (netip.Prefix{}) &&
-		d.IPPool == "" &&
+	return d.IPPool == "" &&
 		d.Routes == nil &&
 		d.Vlan == 0
 }
