@@ -197,6 +197,10 @@ func NewManager(logger *slog.Logger, cfg SRIOVConfig) (*SRIOVManager, error) {
 	return mgr, mgr.init()
 }
 
+func (mgr *SRIOVManager) Type() types.DeviceManagerType {
+	return types.DeviceManagerTypeSRIOV
+}
+
 // ListDevices scans the system to find sr-iov virtual functions.
 func (mgr *SRIOVManager) ListDevices() ([]types.Device, error) {
 	files, err := os.ReadDir(mgr.sysPath)
@@ -227,6 +231,14 @@ func (mgr *SRIOVManager) ListDevices() ([]types.Device, error) {
 	}
 
 	return result, errors.Join(errs...)
+}
+
+func (mgr *SRIOVManager) RestoreDevice(data []byte) (types.Device, error) {
+	var dev PciDevice
+	if err := dev.UnmarshalBinary(data); err != nil {
+		return nil, err
+	}
+	return &dev, nil
 }
 
 const (
