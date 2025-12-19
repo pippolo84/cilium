@@ -81,8 +81,8 @@ func (driver *Driver) RunPodSandbox(ctx context.Context, podSandbox *api.PodSand
 
 				if err := podNs.Do(func() error {
 					if !a.Config.Empty() {
-						if a.Config.Ipv4Addr != (netip.Prefix{}) {
-							ip, n, err := net.ParseCIDR(a.Config.Ipv4Addr.String())
+						if a.Config.IPv4Addr != (netip.Prefix{}) {
+							ip, n, err := net.ParseCIDR(a.Config.IPv4Addr.String())
 							if err == nil {
 								if err := netlink.AddrAdd(l, &netlink.Addr{IPNet: &net.IPNet{IP: ip, Mask: n.Mask}}); err != nil {
 									return err

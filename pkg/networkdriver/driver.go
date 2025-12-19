@@ -24,6 +24,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/ptr"
 
+	"github.com/cilium/cilium/daemon/k8s"
 	"github.com/cilium/cilium/pkg/k8s/resource"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/logging/logfields"
@@ -53,13 +54,18 @@ type Driver struct {
 	resourceClaims resource.Resource[*resourceapi.ResourceClaim]
 	pods           resource.Resource[*corev1.Pod]
 
-	config Config
+	config      Config
+	ipv4Enabled bool
+	ipv6Enabled bool
 
 	deviceManagers map[types.DeviceManagerType]types.DeviceManager
 	// pod.UID: claim.UID: allocation
 	allocations map[kube_types.UID]map[kube_types.UID][]allocation
 	// manager_type: devices
 	devices map[types.DeviceManagerType][]types.Device
+
+	ipam      *multiPoolManager
+	localNode k8s.LocalCiliumNodeResource
 }
 
 type allocation struct {
@@ -411,6 +417,29 @@ func (driver *Driver) Start(ctx cell.HookContext) error {
 		)
 
 		trigger.Trigger()
+
+		driver.jg.Add(
+			job.OneShot(
+				"dra-ipam-node-handler",
+				func(ctx context.Context, health cell.Health) error {
+					for ev := range driver.localNode.Events(ctx) {
+						switch ev.Kind {
+						case resource.Sync:
+							if driver.ipv4Enabled {
+								driver.ipam.restoreFinished(IPv4)
+							}
+							if driver.ipv6Enabled {
+								driver.ipam.restoreFinished(IPv6)
+							}
+						case resource.Upsert:
+							driver.ipam.ciliumNodeUpdated(ev.Object)
+						}
+						ev.Done(nil)
+					}
+					return nil
+				},
+			),
+		)
 
 		return nil
 	}))

@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"path"
 
+	"go4.org/netipx"
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +20,13 @@ import (
 
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/networkdriver/types"
+	"github.com/cilium/cilium/pkg/resiliency"
 	"github.com/cilium/cilium/pkg/time"
+)
+
+const (
+	ipamRetryInterval = 2500 * time.Millisecond
+	ipamMaxRetries    = 120
 )
 
 // HandleError logs out error messages from kubelet.
@@ -30,9 +38,24 @@ func (d *Driver) HandleError(ctx context.Context, err error, msg string) {
 	)
 }
 
+func (driver *Driver) releaseAddrs(cfg types.DeviceConfig) error {
+	var errs []error
+	if driver.ipv4Enabled {
+		if err := driver.ipam.releaseIP(cfg.IPv4Addr.Addr().AsSlice(), Pool(cfg.IPPool), IPv4, true); err != nil {
+			errs = append(errs, fmt.Errorf("failed to release IP address: %w", err))
+		}
+	}
+	if driver.ipv6Enabled {
+		if err := driver.ipam.releaseIP(cfg.IPv4Addr.Addr().AsSlice(), Pool(cfg.IPPool), IPv6, true); err != nil {
+			errs = append(errs, fmt.Errorf("failed to release IP address: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // unprepareResourceClaim removes an allocation and frees up the device.
 func (d *Driver) unprepareResourceClaim(ctx context.Context, claim kubeletplugin.NamespacedObject) error {
-	var errs error
+	var errs []error
 	var found bool
 
 	for pod, alloc := range d.allocations {
@@ -40,8 +63,11 @@ func (d *Driver) unprepareResourceClaim(ctx context.Context, claim kubeletplugin
 		if ok {
 			found = true
 			for _, dev := range devices {
+				if err := d.releaseAddrs(dev.Config); err != nil {
+					errs = append(errs, err)
+				}
 				if err := dev.Device.Free(dev.Config); err != nil {
-					errors.Join(errs, err)
+					errs = append(errs, err)
 				}
 			}
 		}
@@ -67,7 +93,7 @@ func (d *Driver) unprepareResourceClaim(ctx context.Context, claim kubeletplugin
 		)
 	}
 
-	return errs
+	return errors.Join(errs...)
 }
 
 // UnprepareResourceClaims gets called whenever we have a request to deallocate a resource claim. ex: pod goes away.
@@ -114,6 +140,50 @@ func (driver *Driver) deviceClaimConfigs(ctx context.Context, claim *resourceapi
 		}
 	}
 	return devicesCfg, nil
+}
+
+func (driver *Driver) addrsForDevice(ctx context.Context, device string, pool string) (netip.Addr, netip.Addr, error) {
+	var v4Addr, v6Addr netip.Addr
+	if err := resiliency.Retry(ctx, ipamRetryInterval, ipamMaxRetries, func(ctx context.Context, retries int) (bool, error) {
+		var errs []error
+		if driver.ipv4Enabled {
+			res, err := driver.ipam.allocateNext(device, Pool(pool), IPv4, true)
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				addr, ok := netipx.FromStdIP(res.IP)
+				if !ok {
+					return false, fmt.Errorf("invalid IPv4 address %s", res.IP)
+				}
+				v4Addr = addr
+			}
+		}
+		if driver.ipv6Enabled {
+			res, err := driver.ipam.allocateNext(device, Pool(pool), IPv6, true)
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				addr, ok := netipx.FromStdIP(res.IP)
+				if !ok {
+					return false, fmt.Errorf("invalid IPv6 address %s", res.IP)
+				}
+				v6Addr = addr
+			}
+		}
+		if len(errs) > 0 {
+			driver.logger.WarnContext(
+				ctx, "failed to get IP addresses for device, will retry",
+				logfields.Device, device,
+				logfields.PoolName, pool,
+				logfields.Error, errors.Join(errs...),
+			)
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		return netip.Addr{}, netip.Addr{}, fmt.Errorf("failed to get IP addresses for device %s from pool %s", device, pool)
+	}
+	return v4Addr, v6Addr, nil
 }
 
 func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
@@ -168,6 +238,21 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 			}
 		}
 
+		v4Addr, v6Addr, err := driver.addrsForDevice(ctx, result.Device, cfg.IPPool)
+		if err != nil {
+			driver.logger.ErrorContext(
+				ctx, "failed to get IP addresses for device",
+				logfields.Device, result.Device,
+				logfields.PoolName, cfg.IPPool,
+				logfields.Error, err,
+			)
+			return kubeletplugin.PrepareResult{
+				Err: fmt.Errorf("failed to get IP addresses for device %s in claim %s: %w", result.Device, path.Join(claim.Namespace, claim.Name), err),
+			}
+		}
+		thisAlloc.Config.IPv4Addr = netip.PrefixFrom(v4Addr, v4Addr.BitLen())
+		thisAlloc.Config.IPv6Addr = netip.PrefixFrom(v6Addr, v6Addr.BitLen())
+
 		if err := thisAlloc.Device.Setup(thisAlloc.Config); err != nil {
 			driver.logger.ErrorContext(ctx, "failed to set up device",
 				logfields.Device, thisAlloc.Device.IfName(),
@@ -203,7 +288,10 @@ func (driver *Driver) prepareResourceClaim(ctx context.Context, claim *resourcea
 			Data:       &runtime.RawExtension{Raw: dev},
 			NetworkData: &resourceapi.NetworkDeviceData{
 				InterfaceName: thisAlloc.Device.IfName(),
-				IPs:           []string{thisAlloc.Config.Ipv4Addr.String()},
+				IPs: []string{
+					thisAlloc.Config.IPv4Addr.String(),
+					thisAlloc.Config.IPv6Addr.String(),
+				},
 			},
 		})
 	}
