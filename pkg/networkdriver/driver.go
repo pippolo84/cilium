@@ -64,8 +64,9 @@ type Driver struct {
 	// manager_type: devices
 	devices map[types.DeviceManagerType][]types.Device
 
-	ipam      *multiPoolManager
-	localNode k8s.LocalCiliumNodeResource
+	ipam            *multiPoolManager
+	localNode       k8s.LocalCiliumNodeResource
+	localNodeSynced bool
 }
 
 type allocation struct {
@@ -221,12 +222,68 @@ func (driver *Driver) restoreDevicesFromClaim(claim *resourceapi.ResourceClaim) 
 			driver.allocations[podUID] = claimAllocs
 		}
 		claimAllocs[claim.UID] = append(claimAllocs[claim.UID], alloc)
+
+		if driver.ipv4Enabled {
+			if _, err := driver.ipam.allocateIP(
+				alloc.Config.IPv4Addr.Addr().AsSlice(),
+				alloc.Device.IfName(),
+				Pool(alloc.Config.IPPool),
+				IPv4,
+				false,
+			); err != nil {
+				errs = append(errs,
+					fmt.Errorf("failed to restore device IP address %s from pool %s: %w",
+						alloc.Config.IPv4Addr.Addr(), alloc.Config.IPPool, err),
+				)
+			}
+		}
+
+		if driver.ipv6Enabled {
+			if _, err := driver.ipam.allocateIP(
+				alloc.Config.IPv6Addr.Addr().AsSlice(),
+				alloc.Device.IfName(),
+				Pool(alloc.Config.IPPool),
+				IPv6,
+				false,
+			); err != nil {
+				errs = append(errs,
+					fmt.Errorf("failed to restore device IP address %s from pool %s: %w",
+						alloc.Config.IPv6Addr.Addr(), alloc.Config.IPPool, err),
+				)
+			}
+		}
 	}
 
 	return errors.Join(errs...)
 }
 
+func (driver *Driver) waitLocalNodeSynced(ctx context.Context) error {
+	driver.logger.DebugContext(ctx, "Waiting for local node to be synced...")
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+			driver.lock.Lock()
+			localNodeSynced := driver.localNodeSynced
+			driver.lock.Unlock()
+
+			if localNodeSynced {
+				driver.logger.DebugContext(ctx, "Local node synced")
+				return nil
+			}
+		}
+	}
+}
+
 func (driver *Driver) restoreDevices(ctx context.Context) error {
+	// wait for local node to be synced so that the in use CIDRs of the IP
+	// pools are restored. The pools status must be up to date before restoring
+	// the IP addresses of the allocated devices.
+	if err := driver.waitLocalNodeSynced(ctx); err != nil {
+		return err
+	}
+
 	podsStore, err := driver.pods.Store(ctx)
 	if err != nil {
 		return err
@@ -263,6 +320,16 @@ func (driver *Driver) restoreDevices(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("failed to restore allocated devices from claim %s/%s: %w", claim.Namespace, claim.Name, err))
 		}
 	}
+
+	// All IP addresses of previously allocated devices are restored,
+	// mark the IPAM status as ready to allocate addresses for new devices.
+	if driver.ipv4Enabled {
+		driver.ipam.restoreFinished(IPv4)
+	}
+	if driver.ipv6Enabled {
+		driver.ipam.restoreFinished(IPv6)
+	}
+
 	return errors.Join(errs...)
 }
 
@@ -297,9 +364,29 @@ func (driver *Driver) Start(ctx cell.HookContext) error {
 			driver.deviceManagers[manager] = d
 		}
 
+		driver.jg.Add(
+			job.OneShot(
+				"dra-ipam-node-handler",
+				func(ctx context.Context, health cell.Health) error {
+					for ev := range driver.localNode.Events(ctx) {
+						switch ev.Kind {
+						case resource.Sync:
+							driver.lock.Lock()
+							driver.localNodeSynced = true
+							driver.lock.Unlock()
+						case resource.Upsert:
+							driver.ipam.ciliumNodeUpdated(ev.Object)
+						}
+						ev.Done(nil)
+					}
+					return nil
+				},
+			),
+		)
+
 		if err := driver.restoreDevices(ctx); err != nil {
 			driver.logger.ErrorContext(ctx,
-				"failed to restore allocated devices from claims, network driver might be unable to correctly release associated resources",
+				"failed to restore allocated devices from claims",
 				logfields.Error, err,
 			)
 		}
@@ -417,29 +504,6 @@ func (driver *Driver) Start(ctx cell.HookContext) error {
 		)
 
 		trigger.Trigger()
-
-		driver.jg.Add(
-			job.OneShot(
-				"dra-ipam-node-handler",
-				func(ctx context.Context, health cell.Health) error {
-					for ev := range driver.localNode.Events(ctx) {
-						switch ev.Kind {
-						case resource.Sync:
-							if driver.ipv4Enabled {
-								driver.ipam.restoreFinished(IPv4)
-							}
-							if driver.ipv6Enabled {
-								driver.ipam.restoreFinished(IPv6)
-							}
-						case resource.Upsert:
-							driver.ipam.ciliumNodeUpdated(ev.Object)
-						}
-						ev.Done(nil)
-					}
-					return nil
-				},
-			),
-		)
 
 		return nil
 	}))

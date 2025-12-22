@@ -347,6 +347,32 @@ func (m *multiPoolManager) allocateNext(owner string, poolName Pool, family Fami
 	return &AllocationResult{IP: ip, IPPoolName: poolName}, nil
 }
 
+func (m *multiPoolManager) allocateIP(ip net.IP, owner string, poolName Pool, family Family, syncUpstream bool) (*AllocationResult, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	defer func() {
+		if syncUpstream {
+			m.k8sUpdater.TriggerWithReason("allocation of specific IP")
+		}
+	}()
+
+	pool := m.poolByFamilyLocked(poolName, family)
+	if pool == nil {
+		m.pendingIPsPerPool.upsertPendingAllocation(poolName, owner, family)
+		return nil, &ErrPoolNotReadyYet{poolName: poolName, family: family, ip: ip}
+	}
+
+	err := pool.allocate(ip)
+	if err != nil {
+		m.pendingIPsPerPool.upsertPendingAllocation(poolName, owner, family)
+		return nil, err
+	}
+
+	m.pendingIPsPerPool.markAsAllocated(poolName, owner, family)
+	return &AllocationResult{IP: ip, IPPoolName: poolName}, nil
+}
+
 func (m *multiPoolManager) releaseIP(ip net.IP, poolName Pool, family Family, upstreamSync bool) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
